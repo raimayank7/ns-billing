@@ -27,8 +27,8 @@
     var c = dset();
     return {
       type: type, kind: c.kind || 'tax', no: '', date: NS.today(), due: '', pos: '', rc: false, ref: '',
-      seller: { name: '', addr: '', state: '', gstin: '', phone: '', email: '', logo: '', sign: '', bankName: '', bankAcc: '', bankIfsc: '', bankBranch: '', upi: '' },
-      buyer: { name: '', addr: '', state: '', gstin: '', phone: '' }, ship: null,
+      seller: { name: '', addr: '', city: '', pin: '', state: '', gstin: '', phone: '', email: '', logo: '', sign: '', bankName: '', bankAcc: '', bankIfsc: '', bankBranch: '', upi: '' },
+      buyer: { name: '', addr: '', city: '', pin: '', state: '', gstin: '', phone: '' }, ship: null, einv: null, irn: null,
       items: [{ desc: '', hsn: '', qty: 1, unit: c.unit || 'Nos', rate: '', disc: '', gst: c.gst != null && c.gst !== '' ? +c.gst : 18 }],
       round: c.round !== false, comp: true, notes: c.notes || '', terms: c.terms || '', accent: c.accent || ACCENTS[0], status: 'unpaid', copyLabel: 'orig'
     };
@@ -62,6 +62,15 @@
   }
   function sgstName(d) { return UT[d.seller.state] && totals(d).intra ? 'UTGST' : 'SGST'; }
 
+  /* ---------- extensions (e-invoice and e-way bill files): NS.docExt.push({ editor, wire, fill, sheet, drawn }) ---------- */
+  var API = {
+    doc: function () { return doc; }, totals: function () { return totals(doc); }, type: function () { return type; },
+    changed: function () { draw(); saveDraft(); }, field: function (id, label, o) { return field(id, label, o); }, showTab: function (w) { showTab(w); }
+  };
+  function ext(hook, arg) {
+    return (NS.docExt || []).map(function (x) { try { return x[hook] ? x[hook](arg, API) || '' : ''; } catch (e) { console.error(e); return ''; } });
+  }
+
   /* ---------- editor ---------- */
   function stateOptions(first) {
     return '<option value="">' + esc(first) + '</option>' + NS.STATES.map(function (s) { return '<option value="' + s[0] + '">' + s[1] + ' (' + s[0] + ')</option>'; }).join('');
@@ -82,6 +91,7 @@
       '<fieldset class="card"><legend>' + esc(t('lg.biz')) + '</legend><div class="fg">' +
         field('s-name', t('l.bname'), { ph: t('ph.bname'), wide: true, hint: t('h.bname') }) +
         field('s-addr', t('l.addr'), { type: 'textarea', wide: true, ph: t('ph.addr') }) +
+        field('s-city', t('l.city'), {}) + field('s-pin', t('l.pin'), { mode: 'numeric', max: 6, ltr: 1, hint: t('h.pin') }) +
         field('s-state', t('l.state'), { type: 'state' }) +
         field('s-gstin', t('l.gstin'), { ph: t('ph.gstin'), max: 15, ltr: 1 }) +
         field('s-phone', t('l.phone'), { type: 'tel', mode: 'tel', ltr: 1 }) +
@@ -108,12 +118,13 @@
       '<fieldset class="card"><legend>' + esc(t('lg.billto')) + '</legend><div class="fg">' +
         field('b-name', t('l.cname'), { ph: t('ph.cname'), wide: true, hint: t('h.cname') }) +
         field('b-addr', t('l.addr'), { type: 'textarea', wide: true }) +
+        field('b-city', t('l.city'), {}) + field('b-pin', t('l.pin'), { mode: 'numeric', max: 6, ltr: 1, hint: t('h.pin') }) +
         field('b-state', t('l.state'), { type: 'state' }) +
         field('b-gstin', t('l.cgstin'), { max: 15, ltr: 1 }) +
         field('b-phone', t('l.phone'), { type: 'tel', mode: 'tel', ltr: 1 }) +
         '<div class="f"><label class="chk"><input id="b-ship" type="checkbox"> ' + esc(t('l.ship')) + '</label></div>' +
       '</div><div class="fg" id="ship-box" hidden>' +
-        field('sh-name', t('l.shname'), { wide: true }) + field('sh-addr', t('l.shaddr'), { type: 'textarea', wide: true }) + field('sh-state', t('l.shstate'), { type: 'state' }) +
+        field('sh-name', t('l.shname'), { wide: true }) + field('sh-addr', t('l.shaddr'), { type: 'textarea', wide: true }) + field('sh-city', t('l.shcity'), {}) + field('sh-pin', t('l.shpin'), { mode: 'numeric', max: 6, ltr: 1 }) + field('sh-state', t('l.shstate'), { type: 'state' }) +
       '</div></fieldset>' +
 
       '<fieldset class="card"><legend>' + esc(t('lg.items')) + '</legend><div id="items" class="items"></div>' +
@@ -131,7 +142,8 @@
         '<div class="f"><span class="lbl" id="acc-lbl">' + esc(t('l.colour')) + '</span><div class="swatches" role="radiogroup" aria-labelledby="acc-lbl">' + ACCENTS.map(function (c, i) { return '<button type="button" role="radio" class="sw" data-accent="' + c + '" style="--c:' + c + '" aria-label="' + esc(t('colour.n', { n: i + 1 })) + '"></button>'; }).join('') + '</div></div>' +
         '<div class="f"><label class="chk"><input id="d-round" type="checkbox"> ' + esc(t('l.round')) + '</label></div>' +
         '<p class="hint wide print-note">' + esc(tw('print.en')) + '</p>' +
-      '</div></fieldset>';
+      '</div></fieldset>' +
+      ext('editor').join('');
 
     $$('select[id$="state"]', ed).forEach(function (s) { s.innerHTML = stateOptions(t('choose.state')); });
     $('#d-pos', ed).innerHTML = stateOptions(t('same.buyer'));
@@ -146,10 +158,11 @@
       fillForm(); suggestNumber(true); draw(); saveDraft();
     });
     NS.suggest($('#b-name', ed), function () { return NSStore.list('party'); }, function (x) { return x.name; }, function (p) {
-      doc.buyer = { name: p.name, addr: p.addr || '', state: p.state || '', gstin: p.gstin || '', phone: p.phone || '' };
-      if (p.ship && p.ship.addr) doc.ship = { name: p.ship.name || p.name, addr: p.ship.addr, state: p.ship.state || p.state || '' };
+      doc.buyer = { name: p.name, addr: p.addr || '', city: p.city || '', pin: p.pin || '', state: p.state || '', gstin: p.gstin || '', phone: p.phone || '' };
+      if (p.ship && p.ship.addr) doc.ship = { name: p.ship.name || p.name, addr: p.ship.addr, city: p.ship.city || '', pin: p.ship.pin || '', state: p.ship.state || p.state || '' };
       fillForm(); draw(); saveDraft();
     });
+    ext('wire', ed);
   }
 
   function renderItems() {
@@ -176,9 +189,9 @@
     $$('.it-gst', box).forEach(function (f) { f.hidden = doc.kind !== 'tax'; });
   }
 
-  var SMAP = { 's-name': 'name', 's-addr': 'addr', 's-state': 'state', 's-gstin': 'gstin', 's-phone': 'phone', 's-email': 'email', 's-bankName': 'bankName', 's-bankAcc': 'bankAcc', 's-bankIfsc': 'bankIfsc', 's-bankBranch': 'bankBranch', 's-upi': 'upi' };
-  var BMAP = { 'b-name': 'name', 'b-addr': 'addr', 'b-state': 'state', 'b-gstin': 'gstin', 'b-phone': 'phone' };
-  var SHMAP = { 'sh-name': 'name', 'sh-addr': 'addr', 'sh-state': 'state' };
+  var SMAP = { 's-name': 'name', 's-addr': 'addr', 's-city': 'city', 's-pin': 'pin', 's-state': 'state', 's-gstin': 'gstin', 's-phone': 'phone', 's-email': 'email', 's-bankName': 'bankName', 's-bankAcc': 'bankAcc', 's-bankIfsc': 'bankIfsc', 's-bankBranch': 'bankBranch', 's-upi': 'upi' };
+  var BMAP = { 'b-name': 'name', 'b-addr': 'addr', 'b-city': 'city', 'b-pin': 'pin', 'b-state': 'state', 'b-gstin': 'gstin', 'b-phone': 'phone' };
+  var SHMAP = { 'sh-name': 'name', 'sh-addr': 'addr', 'sh-city': 'city', 'sh-pin': 'pin', 'sh-state': 'state' };
   var DMAP = { 'd-kind': 'kind', 'd-no': 'no', 'd-date': 'date', 'd-due': 'due', 'd-pos': 'pos', 'd-ref': 'ref', 'd-notes': 'notes', 'd-terms': 'terms', 'd-status': 'status', 'd-copy': 'copyLabel' };
 
   function fillForm(onlyLook) {
@@ -192,6 +205,7 @@
       if (doc.ship) Object.keys(SHMAP).forEach(function (id) { $('#' + id, ed).value = doc.ship[SHMAP[id]] || ''; });
       renderItems();
       ['s-gstin', 'b-gstin'].forEach(checkGstin);
+      ext('fill', ed);
     }
     $$('[data-accent]', ed).forEach(function (b) { b.setAttribute('aria-checked', String(b.getAttribute('data-accent') === doc.accent)); });
     $('[data-clear="logo"]', ed).hidden = !doc.seller.logo; $('[data-clear="sign"]', ed).hidden = !doc.seller.sign;
@@ -216,7 +230,7 @@
     else if (id === 'd-rc') doc.rc = el.checked;
     else if (id === 'd-round') doc.round = el.checked;
     else if (id === 'd-comp') doc.comp = el.checked;
-    else if (id === 'b-ship') { doc.ship = el.checked ? (doc.ship || { name: '', addr: '', state: '' }) : null; $('#ship-box', root).hidden = !el.checked; }
+    else if (id === 'b-ship') { doc.ship = el.checked ? (doc.ship || { name: '', addr: '', city: '', pin: '', state: '' }) : null; $('#ship-box', root).hidden = !el.checked; }
     else if (el.getAttribute('data-k')) { var i = +el.closest('.it').getAttribute('data-i'); doc.items[i][el.getAttribute('data-k')] = el.value; }
     else return;
     if (id === 's-gstin' || id === 'b-gstin') {
@@ -274,6 +288,7 @@
         (s.gstin ? '<p>' + P.gstin + ': <b class="mono">' + esc(s.gstin) + '</b></p>' : '') +
         ((s.phone || s.email) ? '<p>' + [s.phone ? P.ph + ': ' + esc(s.phone) : '', esc(s.email)].filter(Boolean).join(' · ') + '</p>' : '') +
       '</div></div><div class="sh-title"><h1>' + P[d.kind] + '</h1>' + (d.copyLabel ? '<p class="copy">' + P[d.copyLabel] + '</p>' : '') + '</div></header>' +
+      ext('sheet', d).join('') +
       '<table class="meta"><tr><th>' + P.no + '</th><td class="mono">' + esc(d.no) + '</td><th>' + P.date + '</th><td>' + NS.fmtDate(d.date) + '</td></tr>' +
         '<tr>' + (T.due ? '<th>' + P.due + '</th><td>' + NS.fmtDate(d.due) + '</td>' : '') + '<th>' + P.pos + '</th><td' + (T.due ? '' : ' colspan="3"') + '>' + (posCode ? esc(NS.stateName(posCode)) + ' (' + posCode + ')' : '') + '</td></tr>' +
         (tax || d.ref ? '<tr>' + (tax ? '<th>' + P.rc + '</th><td>' + (d.rc ? P.yes : P.no2) + '</td>' : '') + '<th>' + P.ref + '</th><td' + (tax ? '' : ' colspan="3"') + '>' + esc(d.ref) + '</td></tr>' : '') +
@@ -303,6 +318,7 @@
     sheet.innerHTML = h;
     var q = $('[data-qr]', sheet);
     if (q) drawQr(q, s, d, tt.grand);
+    ext('drawn', sheet);
     var es = $('#ed-sums', root);
     if (es) es.innerHTML = '<span>' + esc(t('sum.items', { n: tt.rows.length })) + '</span><span>' + esc(t('sum.taxable', { v: NS.money(tt.taxable) })) + '</span>' +
       (tax ? '<span>' + esc(t('sum.gst', { v: NS.money(tt.cgst + tt.sgst + tt.igst) })) + (tt.intra ? ' (CGST + ' + SG + ')' : ' (IGST)') + '</span>' : '') + '<b>' + esc(t('sum.total', { v: NS.money(tt.grand) })) + '</b>';
@@ -383,7 +399,7 @@
     }).then(function () {
       var s = doc.seller, b = doc.buyer, jobs = [];
       jobs.push(upsert('biz', function (x) { return key(x.name) === key(s.name); }, JSON.parse(JSON.stringify(s))));
-      if (b.name.trim()) jobs.push(upsert('party', function (x) { return key(x.name) === key(b.name); }, { name: b.name.trim(), addr: b.addr, state: b.state, gstin: b.gstin, phone: b.phone }));
+      if (b.name.trim()) jobs.push(upsert('party', function (x) { return key(x.name) === key(b.name); }, { name: b.name.trim(), addr: b.addr, city: b.city, pin: b.pin, state: b.state, gstin: b.gstin, phone: b.phone }));
       doc.items.forEach(function (it) {
         if (!String(it.desc).trim()) return;
         jobs.push(upsert('item', function (x) { return key(x.desc) === key(it.desc); }, { desc: String(it.desc).trim(), hsn: it.hsn, unit: it.unit, rate: it.rate, gst: it.gst }));
@@ -418,7 +434,7 @@
     doc = Object.assign(blank(), JSON.parse(JSON.stringify(rec)));
     delete doc.id; delete doc.created; delete doc.updated; delete doc.total;
     editingId = asCopy ? null : rec.id;
-    if (asCopy) { doc.date = NS.today(); doc.due = ''; doc.status = 'unpaid'; }
+    if (asCopy) { doc.date = NS.today(); doc.due = ''; doc.status = 'unpaid'; doc.irn = null; }
     fillForm(); if (asCopy) suggestNumber(true); draw(); saveDraft(); setStatus(); showTab('edit');
     window.scrollTo({ top: root.offsetTop - 10, behavior: 'smooth' });
   }
