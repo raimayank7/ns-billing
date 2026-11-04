@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://billing.niveshsahayak.in/sitemap.xml
