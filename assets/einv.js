@@ -1,12 +1,20 @@
 /* NS e-invoice and e-way bill files (no server, no API): the invoice becomes the government JSON format,
    the user uploads it on the portal, then loads the portal's reply so the bill prints with IRN, Ack and signed QR.
-   e-invoice: FORM GST INV-01 v1.1 (IRP bulk upload takes an array of invoices).
-   e-way bill: the portal's bulk generation JSON {version, billLists}. Check both against the portals when they change. */
+   e-invoice: FORM GST INV-01 v1.1 (notified 60/2020-CT; IRP bulk upload takes an array of invoices). v1.2 from 1 Jan 2027
+   (05/2026-CT) adds SupTyp RCMDOM/RCMIMP for buyers' self-invoices, not needed for sales invoices.
+   e-way bill: the portal's bulk generation JSON {version, billLists}. Its key names differ from the e-way bill API
+   (transType, actualFromStateCode, actualToStateCode, OthValue, TotNonAdvolVal), as the portal's bulk tool and the
+   India Compliance app use them. Rules checked 4 Nov 2026 (NiveshSahayak/Tax research). Check against the portals when they change. */
 (function () {
   'use strict';
   var $ = NS.$, $$ = NS.$$, esc = NS.esc, num = NS.num, r2 = NS.r2, t = NS.t;
 
-  var EWB_VERSION = '1.0.0621';
+  var EWB_VERSION = '1.0.0621';   /* copy from the portal's Help > Bulk Generation Tools sample when it changes */
+  /* e-way bill limit for movement inside the state, where a state has raised it above Rs 50,000 (advice only, never blocks).
+     Reported state notifications (Tax research area 4); inter-state is always Rs 50,000. Rajasthan: Rs 2 lakh within one city. */
+  var EWB_LIMIT = { '03': 100000, '07': 100000, '08': 100000, '10': 100000, '20': 100000, '22': 100000, '23': 100000, '27': 100000, '33': 100000 };
+  var AATO = ['', 'lt5', '5to10', '10p'];   /* turnover band: e-invoice and the 30-day rule depend on it */
+  function savedAato() { try { return localStorage.getItem('ns-aato') || ''; } catch (e) { return ''; } }
   var SUP = ['B2B', 'SEZWP', 'SEZWOP', 'EXPWP', 'EXPWOP', 'DEXP'];
   var RATES = [0, 0.1, 0.25, 1, 1.5, 3, 5, 6, 7.5, 12, 18, 28, 40];
   /* our units → GST unit quantity codes (UQC) */
@@ -15,7 +23,8 @@
   /* words printed on the invoice (English, like the rest of the printout) */
   var P = { irn: 'IRN', ack: 'Ack No.', ackdt: 'Ack Date', ewb: 'E-Way Bill No.', ewbdt: 'E-Way Bill Date', till: 'Valid till', qr: 'e-Invoice QR' };
 
-  function ex(d) { return d.einv || (d.einv = { sup: 'B2B', dist: '0', mode: '1', veh: '', vtype: 'R', tid: '', tname: '', tdoc: '', tdate: '', withEwb: false }); }
+  function ex(d) { var e = d.einv || (d.einv = { sup: 'B2B', dist: '0', mode: '1', veh: '', vtype: 'R', tid: '', tname: '', tdoc: '', tdate: '', withEwb: false }); if (e.aato == null) e.aato = (d.seller && d.seller.aato) || savedAato(); return e; }
+  function days(from) { return Math.round((Date.parse(NS.today()) - Date.parse(from)) / 864e5); }
   function dmy(iso) { var m = String(iso || '').match(/^(\d{4})-(\d\d)-(\d\d)/); return m ? m[3] + '/' + m[2] + '/' + m[1] : ''; }
   function digits(s) { return String(s || '').replace(/\D/g, ''); }
   function r3(n) { return Math.round((n + Number.EPSILON) * 1000) / 1000; }
@@ -69,21 +78,32 @@
     tt.rows.forEach(function (r, i) {
       var h = digits(r.it.hsn);
       if (!/^\d{4}$|^\d{6}$|^\d{8}$/.test(h)) bad.push(['it-hsn-' + i, t('ev.hsn', { n: i + 1 })]);
+      else if (what === 'einv' && h.length === 4) bad.push(['it-hsn-' + i, t('ev.hsn6', { n: i + 1 })]);
       if (d.kind === 'tax' && RATES.indexOf(r.g) < 0) bad.push(['it-gst-' + i, t('ev.rate', { n: i + 1, r: r.g })]);
     });
     if (what === 'einv') {
       if (/WP$/.test(e.sup) && tt.intra) bad.push(['d-pos', t('ev.igst')]);
       if (/WOP$/.test(e.sup) && tt.rows.some(function (r) { return r.tax; })) bad.push(['it-gst-0', t('ev.wop')]);
-      var age = (Date.parse(NS.today()) - Date.parse(d.date)) / 864e5;
-      if (age > 30) note.push(t('ev.old'));
+      var age = days(d.date);
+      if (age >= 30) { if (e.aato === '10p') bad.push(['d-date', t('ev.old30')]); else if (!e.aato) note.push(t('ev.old')); }
+      if (e.aato === 'lt5') note.push(t('ev.lt5'));
     }
     if (what === 'ewb' || (what === 'einv' && e.withEwb)) {
       var km = String(e.dist).trim() === '' ? 0 : +e.dist;
       if (!(km >= 0 && km <= 4000 && Math.floor(km) === km)) bad.push(['ei-dist', t('ev.dist')]);
       var v = String(e.veh || '').toUpperCase().replace(/[\s-]/g, '');
-      if (v && !/^[A-Z]{2}\d{1,2}[A-Z]{0,3}\d{4}$|^[A-Z]{3}\d{4}$|^(DF|TM|BP|NP)[A-Z0-9]{5,13}$/.test(v)) bad.push(['ei-veh', t('ev.veh')]);
+      /* state series, old 3-letter, Bharat series (22BH1234AB), temporary (TR...), defence/trade/other special series */
+      if (v && !/^[A-Z]{2}\d{1,2}[A-Z]{0,3}\d{4}$|^[A-Z]{3}\d{4}$|^\d{2}BH\d{4}[A-Z]{1,2}$|^TR[A-Z0-9]{6,13}$|^(DF|TM|BP|NP)[A-Z0-9]{5,13}$/.test(v)) bad.push(['ei-veh', t('ev.veh')]);
       if (e.tid && String(e.tid).trim().length !== 15) bad.push(['ei-tid', t('ev.tid')]);
-      if (what === 'ewb' && tt.grand <= 50000) note.push(t('ev.small'));
+      else if (e.tid && !NS.gstinCheck(String(e.tid).trim()).ok) note.push(t('ev.tidchk'));
+      /* the portal refuses an e-way bill for a document more than 180 days old (since 1 Jan 2025) */
+      if (days(d.date) > 180) bad.push(['d-date', t('ev.old180')]);
+      if (what === 'ewb') {
+        var inside = !d.pos || d.pos === s.state, lim = inside && EWB_LIMIT[s.state] || 50000;
+        if (tt.grand <= lim) note.push(lim > 50000 ? t('ev.smallst', { st: NS.stateName(s.state), v: NS.money(lim, false).replace(/\.00$/, '') }) : t('ev.small'));
+        /* since 1 Mar 2024 e-invoice businesses make the e-way bill for a B2B invoice from the IRN */
+        if (d.kind === 'tax' && NS.gstinCheck(b.gstin).ok && b.gstin && e.aato !== 'lt5') note.push(t('ev.fromirn'));
+      }
     }
     return { bad: bad, note: note };
   }
@@ -141,12 +161,12 @@
       userGstin: s.gstin, supplyType: 'O', subSupplyType: 1, subSupplyDesc: '', docType: d.kind === 'tax' ? 'INV' : 'BIL',
       docNo: String(d.no).toUpperCase(), docDate: dmy(d.date),
       fromGstin: s.gstin, fromTrdName: clip(s.name, 100), fromAddr1: sa[0], fromAddr2: sa[1], fromPlace: clip(s.city, 50), fromPincode: +digits(s.pin),
-      actFromStateCode: +s.state, fromStateCode: +s.state,
+      actualFromStateCode: +s.state, fromStateCode: +s.state,
       toGstin: b.gstin && NS.gstinCheck(b.gstin).ok ? b.gstin : 'URP', toTrdName: clip(b.name, 100), toAddr1: ta[0], toAddr2: ta[1],
-      toPlace: clip((to || b).city, 50), toPincode: +digits((to || b).pin), actToStateCode: +((to && to.state) || b.state), toStateCode: +(d.pos || b.state),
-      transactionType: to ? 2 : 1,
-      otherValue: tt.roundOff, totalValue: r2(tt.taxable), cgstValue: r2(rows.reduce(function (a, r) { return a + r.cgst; }, 0)), sgstValue: r2(rows.reduce(function (a, r) { return a + r.sgst; }, 0)),
-      igstValue: r2(rows.reduce(function (a, r) { return a + r.igst; }, 0)), cessValue: 0, cessNonAdvolValue: 0, totInvValue: tt.grand
+      toPlace: clip((to || b).city, 50), toPincode: +digits((to || b).pin), actualToStateCode: +((to && to.state) || b.state), toStateCode: +(d.pos || b.state),
+      transType: to ? 2 : 1,
+      OthValue: tt.roundOff, totalValue: r2(tt.taxable), cgstValue: r2(rows.reduce(function (a, r) { return a + r.cgst; }, 0)), sgstValue: r2(rows.reduce(function (a, r) { return a + r.sgst; }, 0)),
+      igstValue: r2(rows.reduce(function (a, r) { return a + r.igst; }, 0)), cessValue: 0, TotNonAdvolVal: 0, totInvValue: tt.grand
     };
     Object.assign(bill, ewbPart(e, false));
     bill.mainHsnCode = main ? +digits(main.it.hsn) : 0;
@@ -208,6 +228,7 @@
       '<p class="hint">' + esc(t('ei.intro')) + ' <a href="/e-invoice-e-way-bill/#make-the-file">' + esc(t('ei.guide')) + ' ›</a></p>' +
       '<div class="fg">' +
         '<div class="f wide"><label for="ei-sup">' + esc(t('ei.sup')) + '</label><select id="ei-sup">' + SUP.map(function (k) { return opt(k, t('ei.s.' + k)); }).join('') + '</select></div>' +
+        '<div class="f wide"><label for="ei-aato">' + esc(t('ei.aato')) + '</label><select id="ei-aato">' + AATO.map(function (k) { return opt(k, t('ei.a.' + (k || 'none'))); }).join('') + '</select><small class="hint">' + esc(t('ei.h.aato')) + '</small></div>' +
       '</div>' +
       '<details class="more" id="ei-trd"><summary>' + esc(t('ei.tr')) + '</summary><div class="fg">' +
         F('ei-dist', t('ei.dist'), { mode: 'numeric', max: 4, ltr: 1, hint: t('ei.h.dist') }) +
@@ -230,14 +251,18 @@
       '</div></details>' +
     '</fieldset>';
   }
-  var MAP = { 'ei-sup': 'sup', 'ei-dist': 'dist', 'ei-mode': 'mode', 'ei-veh': 'veh', 'ei-vtype': 'vtype', 'ei-tid': 'tid', 'ei-tname': 'tname', 'ei-tdoc': 'tdoc', 'ei-tdate': 'tdate' };
+  var MAP = { 'ei-aato': 'aato', 'ei-sup': 'sup', 'ei-dist': 'dist', 'ei-mode': 'mode', 'ei-veh': 'veh', 'ei-vtype': 'vtype', 'ei-tid': 'tid', 'ei-tname': 'tname', 'ei-tdoc': 'tdoc', 'ei-tdate': 'tdate' };
   var MAN = { 'ei-irn': 'irn', 'ei-ack': 'ack', 'ei-ackdt': 'ackDt', 'ei-qr': 'qr', 'ei-ewbno': 'ewb', 'ei-ewbdt': 'ewbDt', 'ei-ewbtill': 'ewbTill' };
   function wire(ed) {
     box = $('#ei-box', ed);
     if (!box) return;
     function onEdit(e) {
       var el = e.target, d = api.doc(), x = ex(d);
-      if (MAP[el.id]) { x[MAP[el.id]] = el.value; if (el.id === 'ei-veh' && e.type === 'change') el.value = x.veh = el.value.toUpperCase().replace(/[\s-]/g, ''); }
+      if (MAP[el.id]) {
+        x[MAP[el.id]] = el.value;
+        if (el.id === 'ei-veh' && e.type === 'change') el.value = x.veh = el.value.toUpperCase().replace(/[\s-]/g, '');
+        if (el.id === 'ei-aato') { try { localStorage.setItem('ns-aato', el.value); } catch (err) {} }
+      }
       else if (el.id === 'ei-with') x.withEwb = el.checked;
       else return;
       e.stopPropagation(); api.changed();
@@ -270,6 +295,7 @@
     $('#ei-rm', box).addEventListener('click', function () {
       if (!confirm(t('ei.c.rm'))) return;
       api.doc().irn = null; fill(); api.changed();
+      NS.toast(t('ei.rmnote'));
     });
   }
   function done() {
