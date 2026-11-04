@@ -17,16 +17,20 @@
   var UT = { '04': 1, '26': 1, '31': 1, '35': 1, '38': 1 }; /* Union Territories without a legislature charge UTGST */
 
   var root, T, type, doc, editingId = null, sheet;
+  /* settings made in the Configuration Hub (my.niveshsahayak.in), shared through the data home */
+  var CFG = {}, lastAuto = '';
+  function dset() { return CFG[type] || {}; }
   function W() { return { doc: t('doc.' + type), docs: t('docs.' + type), Doc: t('Doc.' + type) }; }
   function tw(k, v) { return t(k, Object.assign(W(), v || {})); }
 
   function blank() {
+    var c = dset();
     return {
-      type: type, kind: 'tax', no: '', date: NS.today(), due: '', pos: '', rc: false, ref: '',
+      type: type, kind: c.kind || 'tax', no: '', date: NS.today(), due: '', pos: '', rc: false, ref: '',
       seller: { name: '', addr: '', state: '', gstin: '', phone: '', email: '', logo: '', sign: '', bankName: '', bankAcc: '', bankIfsc: '', bankBranch: '', upi: '' },
       buyer: { name: '', addr: '', state: '', gstin: '', phone: '' }, ship: null,
-      items: [{ desc: '', hsn: '', qty: 1, unit: 'Nos', rate: '', disc: '', gst: 18 }],
-      round: true, comp: true, notes: '', terms: '', accent: ACCENTS[0], status: 'unpaid', copyLabel: 'orig'
+      items: [{ desc: '', hsn: '', qty: 1, unit: c.unit || 'Nos', rate: '', disc: '', gst: c.gst != null && c.gst !== '' ? +c.gst : 18 }],
+      round: c.round !== false, comp: true, notes: c.notes || '', terms: c.terms || '', accent: c.accent || ACCENTS[0], status: 'unpaid', copyLabel: 'orig'
     };
   }
 
@@ -72,7 +76,9 @@
   }
   function buildEditor() {
     var ed = $('#ed', root);
+    var hub = (window.NS_CFG && NS_CFG.vault ? new URL(NS_CFG.vault, location.href).origin : 'https://my.niveshsahayak.in') + '/';
     ed.innerHTML =
+      '<p class="hub-link"><a href="' + hub + '" target="_blank" rel="noopener">' + esc(t('hub.link')) + ' ›</a></p>' +
       '<fieldset class="card"><legend>' + esc(t('lg.biz')) + '</legend><div class="fg">' +
         field('s-name', t('l.bname'), { ph: t('ph.bname'), wide: true, hint: t('h.bname') }) +
         field('s-addr', t('l.addr'), { type: 'textarea', wide: true, ph: t('ph.addr') }) +
@@ -141,6 +147,7 @@
     });
     NS.suggest($('#b-name', ed), function () { return NSStore.list('party'); }, function (x) { return x.name; }, function (p) {
       doc.buyer = { name: p.name, addr: p.addr || '', state: p.state || '', gstin: p.gstin || '', phone: p.phone || '' };
+      if (p.ship && p.ship.addr) doc.ship = { name: p.ship.name || p.name, addr: p.ship.addr, state: p.ship.state || p.state || '' };
       fillForm(); draw(); saveDraft();
     });
   }
@@ -226,8 +233,9 @@
   /* ---------- numbering: prefix/FY/serial, one series per business and financial year ---------- */
   function suggestNumber(force) {
     if (editingId && !force) return Promise.resolve();
-    var fy = NS.fy(doc.date), short = fy.slice(2, 4) + '-' + fy.slice(5);
-    var prefix = T.prefix + '/' + short + '/';
+    var c = dset(), fy = NS.fy(doc.date), short = fy.slice(2, 4) + '-' + fy.slice(5);
+    var pre = String(c.prefix != null ? c.prefix : T.prefix).trim().replace(/[^A-Za-z0-9\/\-]/g, '');
+    var prefix = (pre ? pre + '/' : '') + (c.fy === false ? '' : short + '/'), digits = Math.min(6, Math.max(1, +c.digits || 3));
     return NSStore.list('doc').then(function (all) {
       var key = (doc.seller.name || '').trim().toLowerCase(), max = 0;
       all.forEach(function (d) {
@@ -236,8 +244,8 @@
         var m = String(d.no || '').match(/(\d+)\s*$/);
         if (m) max = Math.max(max, +m[1]);
       });
-      if (force || !doc.no || /^[A-Z]+\/\d\d-\d\d\/\d+$/.test(doc.no)) {
-        doc.no = prefix + String(max + 1).padStart(3, '0');
+      if (force || !doc.no || doc.no === lastAuto || /^[A-Z]+\/\d\d-\d\d\/\d+$/.test(doc.no)) {
+        doc.no = lastAuto = prefix + String(max + 1).padStart(digits, '0');
         var n = $('#d-no', root); if (n) n.value = doc.no;
         draw();
       }
@@ -507,7 +515,18 @@
     render();
     document.addEventListener('ns-lang', render);
     NSStore.ready().then(function () {
-      if (!dr) suggestNumber(true);
+      return NSStore.meta('settings').then(function (c) { CFG = c || {}; }, function () {});
+    }).then(function () {
+      if (dr) return;
+      /* a fresh start: the hub's defaults and the default business */
+      var seller = doc.seller;
+      doc = blank(); doc.seller = seller;
+      return (CFG.defBiz ? NSStore.get('biz', CFG.defBiz).catch(function () {}) : Promise.resolve()).then(function (b) {
+        if (b && !doc.seller.name) { doc.seller = Object.assign(blank().seller, b); delete doc.seller.id; delete doc.seller.created; delete doc.seller.updated; }
+        render();
+        return suggestNumber(true);
+      });
+    }).then(function () {
       NS.checkReminder();
       NSStore.persist().catch(function () {});
       root.classList.add('live');
