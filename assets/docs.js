@@ -1,35 +1,32 @@
 /* NS documents: the editor, live A4 preview, saving and history for every document site.
-   A site picks its document type with <section id="tool" data-doc="invoice">. */
+   A site picks its document type with <section id="tool" data-doc="invoice">.
+   Screen text comes from NS.t (the user's language); the printed document is always in English. */
 (function () {
   'use strict';
-  var $ = NS.$, $$ = NS.$$, esc = NS.esc, num = NS.num, r2 = NS.r2;
+  var $ = NS.$, $$ = NS.$$, esc = NS.esc, num = NS.num, r2 = NS.r2, t = NS.t;
 
   var TYPES = {
-    invoice: {
-      name: 'Invoice', prefix: 'INV', kinds: [['tax', 'Tax invoice'], ['supply', 'Bill of supply'], ['plain', 'Invoice (not GST registered)']],
-      due: true, ref: 'Order / PO number', copy: true
-    }
+    invoice: { prefix: 'INV', kinds: ['tax', 'supply', 'plain'], due: true, copy: true }
   };
 
-  /* words printed on the document, in three languages */
-  var L = {
-    en: { tax: 'TAX INVOICE', supply: 'BILL OF SUPPLY', plain: 'INVOICE', no: 'Invoice No.', date: 'Date', due: 'Due date', pos: 'Place of supply', rc: 'Reverse charge', ref: 'Order ref.', billto: 'Bill to', shipto: 'Ship to', gstin: 'GSTIN', ph: 'Phone', item: 'Item / service', hsn: 'HSN/SAC', qty: 'Qty', rate: 'Rate', disc: 'Disc.', taxable: 'Taxable value', gst: 'GST', amount: 'Amount', subtotal: 'Taxable value', cgst: 'CGST', sgst: 'SGST', igst: 'IGST', round: 'Round off', total: 'Total', words: 'Amount in words', summary: 'Tax summary', bank: 'Bank details', acc: 'A/c no.', ifsc: 'IFSC', branch: 'Branch', upi: 'Scan to pay by UPI', notes: 'Notes', terms: 'Terms and conditions', for: 'For', sign: 'Authorised signatory', yes: 'Yes', no2: 'No', supplynote: 'Composition taxable person, not eligible to collect tax on supplies.', paid: 'PAID', orig: 'Original for recipient', dup: 'Duplicate for transporter', trip: 'Triplicate for supplier' },
-    hi: { tax: 'कर बीजक (TAX INVOICE)', supply: 'आपूर्ति का बिल (BILL OF SUPPLY)', plain: 'बीजक (INVOICE)', no: 'बीजक सं.', date: 'दिनांक', due: 'भुगतान तिथि', pos: 'आपूर्ति का स्थान', rc: 'रिवर्स चार्ज', ref: 'ऑर्डर सं.', billto: 'खरीदार', shipto: 'भेजने का पता', gstin: 'GSTIN', ph: 'फ़ोन', item: 'विवरण', hsn: 'HSN/SAC', qty: 'मात्रा', rate: 'दर', disc: 'छूट', taxable: 'करयोग्य मूल्य', gst: 'GST', amount: 'राशि', subtotal: 'करयोग्य मूल्य', cgst: 'CGST', sgst: 'SGST', igst: 'IGST', round: 'पूर्णांकन', total: 'कुल', words: 'राशि शब्दों में', summary: 'कर सारांश', bank: 'बैंक विवरण', acc: 'खाता सं.', ifsc: 'IFSC', branch: 'शाखा', upi: 'UPI से भुगतान के लिए स्कैन करें', notes: 'टिप्पणी', terms: 'नियम और शर्तें', for: 'कृते', sign: 'अधिकृत हस्ताक्षरकर्ता', yes: 'हाँ', no2: 'नहीं', supplynote: 'कंपोजिशन करदाता, आपूर्ति पर कर लेने का पात्र नहीं।', paid: 'भुगतान हो गया', orig: 'प्राप्तकर्ता के लिए मूल', dup: 'ट्रांसपोर्टर के लिए द्वितीय प्रति', trip: 'आपूर्तिकर्ता के लिए तृतीय प्रति' },
-    pa: { tax: 'ਟੈਕਸ ਇਨਵਾਇਸ (TAX INVOICE)', supply: 'ਸਪਲਾਈ ਦਾ ਬਿੱਲ (BILL OF SUPPLY)', plain: 'ਇਨਵਾਇਸ (INVOICE)', no: 'ਇਨਵਾਇਸ ਨੰ.', date: 'ਤਾਰੀਖ', due: 'ਭੁਗਤਾਨ ਤਾਰੀਖ', pos: 'ਸਪਲਾਈ ਦੀ ਥਾਂ', rc: 'ਰਿਵਰਸ ਚਾਰਜ', ref: 'ਆਰਡਰ ਨੰ.', billto: 'ਖਰੀਦਦਾਰ', shipto: 'ਭੇਜਣ ਦਾ ਪਤਾ', gstin: 'GSTIN', ph: 'ਫ਼ੋਨ', item: 'ਵੇਰਵਾ', hsn: 'HSN/SAC', qty: 'ਮਿਕਦਾਰ', rate: 'ਰੇਟ', disc: 'ਛੋਟ', taxable: 'ਟੈਕਸ ਯੋਗ ਮੁੱਲ', gst: 'GST', amount: 'ਰਕਮ', subtotal: 'ਟੈਕਸ ਯੋਗ ਮੁੱਲ', cgst: 'CGST', sgst: 'SGST', igst: 'IGST', round: 'ਪੂਰਨਾਂਕਣ', total: 'ਕੁੱਲ', words: 'ਰਕਮ ਸ਼ਬਦਾਂ ਵਿੱਚ', summary: 'ਟੈਕਸ ਸੰਖੇਪ', bank: 'ਬੈਂਕ ਵੇਰਵੇ', acc: 'ਖਾਤਾ ਨੰ.', ifsc: 'IFSC', branch: 'ਸ਼ਾਖਾ', upi: 'UPI ਨਾਲ ਭੁਗਤਾਨ ਲਈ ਸਕੈਨ ਕਰੋ', notes: 'ਨੋਟ', terms: 'ਨਿਯਮ ਅਤੇ ਸ਼ਰਤਾਂ', for: 'ਵੱਲੋਂ', sign: 'ਅਧਿਕਾਰਤ ਦਸਤਖਤਕਾਰ', yes: 'ਹਾਂ', no2: 'ਨਹੀਂ', supplynote: 'ਕੰਪੋਜ਼ੀਸ਼ਨ ਟੈਕਸਦਾਤਾ, ਸਪਲਾਈ ਤੇ ਟੈਕਸ ਲੈਣ ਦਾ ਹੱਕਦਾਰ ਨਹੀਂ।', paid: 'ਭੁਗਤਾਨ ਹੋ ਗਿਆ', orig: 'ਪ੍ਰਾਪਤਕਰਤਾ ਲਈ ਅਸਲ', dup: 'ਟਰਾਂਸਪੋਰਟਰ ਲਈ ਦੂਜੀ ਕਾਪੀ', trip: 'ਸਪਲਾਇਰ ਲਈ ਤੀਜੀ ਕਾਪੀ' }
-  };
+  /* words printed on the document (English only, readable by every buyer, bank and tax officer) */
+  var P = { tax: 'TAX INVOICE', supply: 'BILL OF SUPPLY', plain: 'INVOICE', no: 'Invoice No.', date: 'Date', due: 'Due date', pos: 'Place of supply', rc: 'Reverse charge', ref: 'Order ref.', billto: 'Bill to', shipto: 'Ship to', gstin: 'GSTIN', ph: 'Phone', item: 'Item / service', hsn: 'HSN/SAC', qty: 'Qty', rate: 'Rate', disc: 'Disc.', taxable: 'Taxable value', gst: 'GST', amount: 'Amount', subtotal: 'Taxable value', cgst: 'CGST', sgst: 'SGST', igst: 'IGST', round: 'Round off', total: 'Total', words: 'Amount in words', summary: 'Tax summary', bank: 'Bank details', acc: 'A/c no.', ifsc: 'IFSC', branch: 'Branch', upi: 'Scan to pay by UPI', notes: 'Notes', terms: 'Terms and conditions', for: 'For', sign: 'Authorised signatory', yes: 'Yes', no2: 'No', supplynote: 'Composition taxable person, not eligible to collect tax on supplies.', paid: 'PAID', orig: 'Original for recipient', dup: 'Duplicate for transporter', trip: 'Triplicate for supplier' };
   var UNITS = ['Nos', 'Pcs', 'Kg', 'Gm', 'Ltr', 'Ml', 'Mtr', 'Sq ft', 'Box', 'Pack', 'Set', 'Pair', 'Dozen', 'Bag', 'Ton', 'Hrs', 'Days', 'Month', 'Job'];
   var RATES = [0, 0.25, 3, 5, 12, 18, 28, 40];
   var ACCENTS = ['#0B3B5B', '#1D4ED8', '#047857', '#B45309', '#9D174D', '#334155'];
+  var UT = { '04': 1, '26': 1, '31': 1, '35': 1, '38': 1 }; /* Union Territories without a legislature charge UTGST */
 
-  var root, T, doc, editingId = null, sheet;
+  var root, T, type, doc, editingId = null, sheet;
+  function W() { return { doc: t('doc.' + type), docs: t('docs.' + type), Doc: t('Doc.' + type) }; }
+  function tw(k, v) { return t(k, Object.assign(W(), v || {})); }
 
   function blank() {
     return {
-      type: root.getAttribute('data-doc'), kind: 'tax', no: '', date: NS.today(), due: '', pos: '', rc: false, ref: '',
+      type: type, kind: 'tax', no: '', date: NS.today(), due: '', pos: '', rc: false, ref: '',
       seller: { name: '', addr: '', state: '', gstin: '', phone: '', email: '', logo: '', sign: '', bankName: '', bankAcc: '', bankIfsc: '', bankBranch: '', upi: '' },
       buyer: { name: '', addr: '', state: '', gstin: '', phone: '' }, ship: null,
       items: [{ desc: '', hsn: '', qty: 1, unit: 'Nos', rate: '', disc: '', gst: 18 }],
-      round: true, comp: true, notes: '', terms: '', lang: 'en', accent: ACCENTS[0], status: 'unpaid', copyLabel: 'orig'
+      round: true, comp: true, notes: '', terms: '', accent: ACCENTS[0], status: 'unpaid', copyLabel: 'orig'
     };
   }
 
@@ -38,142 +35,135 @@
     var noTax = d.kind !== 'tax';
     var origin = d.seller.state, dest = d.pos || d.buyer.state || origin;
     var intra = !origin || !dest || origin === dest;
-    var t = { rows: [], taxable: 0, cgst: 0, sgst: 0, igst: 0, intra: intra, noTax: noTax, sum: {} };
+    var tt = { rows: [], taxable: 0, cgst: 0, sgst: 0, igst: 0, intra: intra, noTax: noTax, sum: {} };
     d.items.forEach(function (it) {
       var q = num(it.qty), rate = num(it.rate);
       if (!it.desc && !rate) return;
       var gross = q * rate, disc = gross * num(it.disc) / 100, taxable = r2(gross - disc);
       var g = noTax ? 0 : num(it.gst), tax = r2(taxable * g / 100);
-      var row = { it: it, gross: gross, taxable: taxable, g: g, tax: tax, amount: r2(taxable + tax) };
-      t.rows.push(row);
-      t.taxable += taxable;
+      tt.rows.push({ it: it, taxable: taxable, g: g, tax: tax, amount: r2(taxable + tax) });
+      tt.taxable += taxable;
       if (!noTax) {
-        if (intra) { t.cgst += tax / 2; t.sgst += tax / 2; } else t.igst += tax;
+        if (intra) { tt.cgst += tax / 2; tt.sgst += tax / 2; } else tt.igst += tax;
         var k = (it.hsn || '—') + '|' + g;
-        var s = t.sum[k] || (t.sum[k] = { hsn: it.hsn || '—', g: g, taxable: 0, tax: 0 });
+        var s = tt.sum[k] || (tt.sum[k] = { hsn: it.hsn || '—', g: g, taxable: 0, tax: 0 });
         s.taxable += taxable; s.tax += tax;
       }
     });
-    t.taxable = r2(t.taxable); t.cgst = r2(t.cgst); t.sgst = r2(t.sgst); t.igst = r2(t.igst);
-    var total = r2(t.taxable + t.cgst + t.sgst + t.igst);
-    t.roundOff = d.round ? r2(Math.round(total) - total) : 0;
-    t.grand = r2(total + t.roundOff);
-    return t;
+    tt.taxable = r2(tt.taxable); tt.cgst = r2(tt.cgst); tt.sgst = r2(tt.sgst); tt.igst = r2(tt.igst);
+    var total = r2(tt.taxable + tt.cgst + tt.sgst + tt.igst);
+    tt.roundOff = d.round ? r2(Math.round(total) - total) : 0;
+    tt.grand = r2(total + tt.roundOff);
+    return tt;
   }
+  function sgstName(d) { return UT[d.seller.state] && totals(d).intra ? 'UTGST' : 'SGST'; }
 
   /* ---------- editor ---------- */
-  function stateOptions(sel) {
-    return '<option value="">Choose state</option>' + NS.STATES.map(function (s) { return '<option value="' + s[0] + '"' + (s[0] === sel ? ' selected' : '') + '>' + s[1] + ' (' + s[0] + ')</option>'; }).join('');
+  function stateOptions(first) {
+    return '<option value="">' + esc(first) + '</option>' + NS.STATES.map(function (s) { return '<option value="' + s[0] + '">' + s[1] + ' (' + s[0] + ')</option>'; }).join('');
   }
-  function field(id, label, opts) {
-    opts = opts || {};
-    var type = opts.type || 'text', hint = opts.hint ? '<small class="hint">' + opts.hint + '</small>' : '';
-    var input = type === 'textarea' ? '<textarea id="' + id + '" rows="' + (opts.rows || 2) + '" placeholder="' + esc(opts.ph || '') + '"></textarea>'
-      : type === 'state' ? '<select id="' + id + '"></select>'
-      : '<input id="' + id + '" type="' + type + '"' + (opts.mode ? ' inputmode="' + opts.mode + '"' : '') + ' placeholder="' + esc(opts.ph || '') + '"' + (opts.max ? ' maxlength="' + opts.max + '"' : '') + '>';
-    return '<div class="f' + (opts.wide ? ' wide' : '') + '"><label for="' + id + '">' + label + '</label>' + input + hint + '<small class="err" id="' + id + '-err" hidden></small></div>';
+  function field(id, label, o) {
+    o = o || {};
+    var type_ = o.type || 'text', hint = o.hint ? '<small class="hint">' + esc(o.hint) + '</small>' : '';
+    var input = type_ === 'textarea' ? '<textarea id="' + id + '" rows="' + (o.rows || 2) + '" dir="auto" placeholder="' + esc(o.ph || '') + '"></textarea>'
+      : type_ === 'state' ? '<select id="' + id + '"></select>'
+      : '<input id="' + id + '" type="' + type_ + '"' + (o.mode ? ' inputmode="' + o.mode + '"' : '') + ' placeholder="' + esc(o.ph || '') + '"' + (o.max ? ' maxlength="' + o.max + '"' : '') + (o.ltr ? ' dir="ltr"' : ' dir="auto"') + '>';
+    return '<div class="f' + (o.wide ? ' wide' : '') + '"><label for="' + id + '">' + esc(label) + '</label>' + input + hint + '<small class="err" id="' + id + '-err" hidden></small></div>';
   }
   function buildEditor() {
     var ed = $('#ed', root);
     ed.innerHTML =
-      '<fieldset class="card"><legend>Your business</legend><div class="fg">' +
-        field('s-name', 'Business name', { ph: 'Type your business name', wide: true, hint: 'Saved businesses appear as you type.' }) +
-        field('s-addr', 'Address', { type: 'textarea', wide: true, ph: 'Shop no., street, city, PIN' }) +
-        field('s-state', 'State', { type: 'state' }) +
-        field('s-gstin', 'GSTIN', { ph: '15 characters', max: 15 }) +
-        field('s-phone', 'Phone', { type: 'tel', mode: 'tel' }) +
-        field('s-email', 'Email', { type: 'email' }) +
-      '</div><details class="more"><summary>Logo, signature and bank details</summary><div class="fg">' +
-        '<div class="f"><label for="s-logo">Logo</label><input id="s-logo" type="file" accept="image/*"><button type="button" class="link" data-clear="logo" hidden>Remove logo</button></div>' +
-        '<div class="f"><label for="s-sign">Signature or stamp</label><input id="s-sign" type="file" accept="image/*"><button type="button" class="link" data-clear="sign" hidden>Remove signature</button></div>' +
-        field('s-bankName', 'Bank name') + field('s-bankAcc', 'Account number', { mode: 'numeric' }) +
-        field('s-bankIfsc', 'IFSC', { max: 11 }) + field('s-bankBranch', 'Branch') +
-        field('s-upi', 'UPI ID (for the pay-by-QR code)', { ph: 'name@bank', wide: true }) +
+      '<fieldset class="card"><legend>' + esc(t('lg.biz')) + '</legend><div class="fg">' +
+        field('s-name', t('l.bname'), { ph: t('ph.bname'), wide: true, hint: t('h.bname') }) +
+        field('s-addr', t('l.addr'), { type: 'textarea', wide: true, ph: t('ph.addr') }) +
+        field('s-state', t('l.state'), { type: 'state' }) +
+        field('s-gstin', t('l.gstin'), { ph: t('ph.gstin'), max: 15, ltr: 1 }) +
+        field('s-phone', t('l.phone'), { type: 'tel', mode: 'tel', ltr: 1 }) +
+        field('s-email', t('l.email'), { type: 'email', ltr: 1 }) +
+      '</div><details class="more"><summary>' + esc(t('more')) + '</summary><div class="fg">' +
+        '<div class="f"><label for="s-logo">' + esc(t('l.logo')) + '</label><input id="s-logo" type="file" accept="image/*"><button type="button" class="link" data-clear="logo" hidden>' + esc(t('rm.logo')) + '</button></div>' +
+        '<div class="f"><label for="s-sign">' + esc(t('l.sign')) + '</label><input id="s-sign" type="file" accept="image/*"><button type="button" class="link" data-clear="sign" hidden>' + esc(t('rm.sign')) + '</button></div>' +
+        field('s-bankName', t('l.bank')) + field('s-bankAcc', t('l.acc'), { mode: 'numeric', ltr: 1 }) +
+        field('s-bankIfsc', t('l.ifsc'), { max: 11, ltr: 1 }) + field('s-bankBranch', t('l.branch')) +
+        field('s-upi', t('l.upi'), { ph: 'name@bank', wide: true, ltr: 1 }) +
       '</div></details></fieldset>' +
 
-      '<fieldset class="card"><legend>' + T.name + ' details</legend><div class="fg">' +
-        '<div class="f wide"><label for="d-kind">Type</label><select id="d-kind">' + T.kinds.map(function (k) { return '<option value="' + k[0] + '">' + k[1] + '</option>'; }).join('') + '</select><small class="hint" id="kind-hint"></small></div>' +
-        '<div class="f wide" id="comp-box" hidden><label class="chk"><input id="d-comp" type="checkbox"> I am in the composition scheme (prints the note the rules require)</label></div>' +
-        field('d-no', T.name + ' number', { max: 16, hint: 'Up to 16 letters, numbers, / or -. A new number is suggested for each bill.' }) +
-        field('d-date', 'Date', { type: 'date' }) +
-        (T.due ? field('d-due', 'Due date', { type: 'date' }) : '') +
-        field('d-pos', 'Place of supply', { type: 'state', hint: 'Usually the buyer’s state. It decides CGST + SGST or IGST.' }) +
-        field('d-ref', T.ref, {}) +
-        '<div class="f"><label class="chk"><input id="d-rc" type="checkbox"> Tax payable on reverse charge</label></div>' +
+      '<fieldset class="card"><legend>' + esc(tw('lg.details')) + '</legend><div class="fg">' +
+        '<div class="f wide"><label for="d-kind">' + esc(t('l.type')) + '</label><select id="d-kind">' + T.kinds.map(function (k) { return '<option value="' + k + '">' + esc(t('k.' + k)) + '</option>'; }).join('') + '</select><small class="hint" id="kind-hint"></small></div>' +
+        '<div class="f wide" id="comp-box" hidden><label class="chk"><input id="d-comp" type="checkbox"> ' + esc(t('comp')) + '</label></div>' +
+        field('d-no', tw('l.no'), { max: 16, hint: t('h.no'), ltr: 1 }) +
+        field('d-date', t('l.date'), { type: 'date' }) +
+        (T.due ? field('d-due', t('l.due'), { type: 'date' }) : '') +
+        field('d-pos', t('l.pos'), { type: 'state', hint: t('h.pos') }) +
+        field('d-ref', t('l.ref'), {}) +
+        '<div class="f"><label class="chk"><input id="d-rc" type="checkbox"> ' + esc(t('l.rc')) + '</label></div>' +
       '</div></fieldset>' +
 
-      '<fieldset class="card"><legend>Bill to</legend><div class="fg">' +
-        field('b-name', 'Customer name', { ph: 'Type the customer’s name', wide: true, hint: 'Saved customers appear as you type.' }) +
-        field('b-addr', 'Address', { type: 'textarea', wide: true }) +
-        field('b-state', 'State', { type: 'state' }) +
-        field('b-gstin', 'GSTIN (if registered)', { max: 15 }) +
-        field('b-phone', 'Phone', { type: 'tel', mode: 'tel' }) +
-        '<div class="f"><label class="chk"><input id="b-ship" type="checkbox"> Ship to a different address</label></div>' +
+      '<fieldset class="card"><legend>' + esc(t('lg.billto')) + '</legend><div class="fg">' +
+        field('b-name', t('l.cname'), { ph: t('ph.cname'), wide: true, hint: t('h.cname') }) +
+        field('b-addr', t('l.addr'), { type: 'textarea', wide: true }) +
+        field('b-state', t('l.state'), { type: 'state' }) +
+        field('b-gstin', t('l.cgstin'), { max: 15, ltr: 1 }) +
+        field('b-phone', t('l.phone'), { type: 'tel', mode: 'tel', ltr: 1 }) +
+        '<div class="f"><label class="chk"><input id="b-ship" type="checkbox"> ' + esc(t('l.ship')) + '</label></div>' +
       '</div><div class="fg" id="ship-box" hidden>' +
-        field('sh-name', 'Ship to name', { wide: true }) + field('sh-addr', 'Ship to address', { type: 'textarea', wide: true }) + field('sh-state', 'Ship to state', { type: 'state' }) +
+        field('sh-name', t('l.shname'), { wide: true }) + field('sh-addr', t('l.shaddr'), { type: 'textarea', wide: true }) + field('sh-state', t('l.shstate'), { type: 'state' }) +
       '</div></fieldset>' +
 
-      '<fieldset class="card"><legend>Items</legend><div id="items" class="items"></div>' +
-        '<button type="button" class="btn" id="add-item">+ Add item</button>' +
+      '<fieldset class="card"><legend>' + esc(t('lg.items')) + '</legend><div id="items" class="items"></div>' +
+        '<button type="button" class="btn" id="add-item">' + esc(t('add.item')) + '</button>' +
         '<datalist id="dl-units">' + UNITS.map(function (u) { return '<option value="' + u + '">'; }).join('') + '</datalist>' +
         '<datalist id="dl-rates">' + RATES.map(function (u) { return '<option value="' + u + '">'; }).join('') + '</datalist>' +
         '<div class="sums" id="ed-sums" aria-live="polite"></div>' +
       '</fieldset>' +
 
-      '<fieldset class="card"><legend>Notes and look</legend><div class="fg">' +
-        field('d-notes', 'Notes', { type: 'textarea', wide: true, ph: 'For example: Thank you for your business.' }) +
-        field('d-terms', 'Terms and conditions', { type: 'textarea', wide: true, ph: 'For example: Payment within 15 days. Interest at 18% a year after the due date.' }) +
-        '<div class="f"><label for="d-lang">Language on the ' + T.name.toLowerCase() + '</label><select id="d-lang"><option value="en">English</option><option value="hi">हिंदी (Hindi)</option><option value="pa">ਪੰਜਾਬੀ (Punjabi)</option></select></div>' +
-        (T.copy ? '<div class="f"><label for="d-copy">Copy label</label><select id="d-copy"><option value="orig">Original for recipient</option><option value="dup">Duplicate for transporter</option><option value="trip">Triplicate for supplier</option><option value="">No label</option></select></div>' : '') +
-        '<div class="f"><span class="lbl" id="acc-lbl">Colour</span><div class="swatches" role="radiogroup" aria-labelledby="acc-lbl">' + ACCENTS.map(function (c, i) { return '<button type="button" role="radio" class="sw" data-accent="' + c + '" style="--c:' + c + '" aria-label="Colour ' + (i + 1) + '"></button>'; }).join('') + '</div></div>' +
-        '<div class="f"><label class="chk"><input id="d-round" type="checkbox"> Round off the total</label></div>' +
-        '<div class="f"><label for="d-status">Payment</label><select id="d-status"><option value="unpaid">Not paid yet</option><option value="paid">Paid</option></select></div>' +
+      '<fieldset class="card"><legend>' + esc(t('lg.notes')) + '</legend><div class="fg">' +
+        field('d-notes', t('l.notes'), { type: 'textarea', wide: true, ph: t('ph.notes') }) +
+        field('d-terms', t('l.terms'), { type: 'textarea', wide: true, ph: t('ph.terms') }) +
+        (T.copy ? '<div class="f"><label for="d-copy">' + esc(t('l.copy')) + '</label><select id="d-copy"><option value="orig">' + esc(t('cp.orig')) + '</option><option value="dup">' + esc(t('cp.dup')) + '</option><option value="trip">' + esc(t('cp.trip')) + '</option><option value="">' + esc(t('cp.none')) + '</option></select></div>' : '') +
+        '<div class="f"><label for="d-status">' + esc(t('l.pay')) + '</label><select id="d-status"><option value="unpaid">' + esc(t('pay.unpaid')) + '</option><option value="paid">' + esc(t('pay.paid')) + '</option></select></div>' +
+        '<div class="f"><span class="lbl" id="acc-lbl">' + esc(t('l.colour')) + '</span><div class="swatches" role="radiogroup" aria-labelledby="acc-lbl">' + ACCENTS.map(function (c, i) { return '<button type="button" role="radio" class="sw" data-accent="' + c + '" style="--c:' + c + '" aria-label="' + esc(t('colour.n', { n: i + 1 })) + '"></button>'; }).join('') + '</div></div>' +
+        '<div class="f"><label class="chk"><input id="d-round" type="checkbox"> ' + esc(t('l.round')) + '</label></div>' +
+        '<p class="hint wide print-note">' + esc(tw('print.en')) + '</p>' +
       '</div></fieldset>';
 
-    $$('select[id$="state"], #d-pos', ed).forEach(function (s) { s.innerHTML = stateOptions(''); });
-    $('#d-pos', ed).innerHTML = stateOptions('').replace('Choose state', 'Same as buyer’s state');
-    ed.addEventListener('input', onInput);
-    ed.addEventListener('change', onInput);
+    $$('select[id$="state"]', ed).forEach(function (s) { s.innerHTML = stateOptions(t('choose.state')); });
+    $('#d-pos', ed).innerHTML = stateOptions(t('same.buyer'));
     $('#add-item', ed).addEventListener('click', function () { doc.items.push({ desc: '', hsn: '', qty: 1, unit: 'Nos', rate: '', disc: '', gst: doc.items.length ? doc.items[doc.items.length - 1].gst : 18 }); renderItems(); var d = $$('#items .it-desc', ed); d[d.length - 1].focus(); });
-    $$('[data-accent]', ed).forEach(function (b) { b.addEventListener('click', function () { doc.accent = b.getAttribute('data-accent'); fillForm(true); draw(); }); });
+    $$('[data-accent]', ed).forEach(function (b) { b.addEventListener('click', function () { doc.accent = b.getAttribute('data-accent'); fillForm(true); draw(); saveDraft(); }); });
     ['logo', 'sign'].forEach(function (k) {
-      $('#s-' + k, ed).addEventListener('change', function (e) { var f = e.target.files[0]; if (f) shrink(f, k === 'logo' ? 360 : 420).then(function (u) { doc.seller[k] = u; fillForm(true); draw(); }); });
-      $('[data-clear="' + k + '"]', ed).addEventListener('click', function () { doc.seller[k] = ''; $('#s-' + k, ed).value = ''; fillForm(true); draw(); });
+      $('#s-' + k, ed).addEventListener('change', function (e) { var f = e.target.files[0]; if (f) shrink(f, k === 'logo' ? 360 : 420).then(function (u) { doc.seller[k] = u; fillForm(true); draw(); saveDraft(); }); });
+      $('[data-clear="' + k + '"]', ed).addEventListener('click', function () { doc.seller[k] = ''; $('#s-' + k, ed).value = ''; fillForm(true); draw(); saveDraft(); });
     });
-
     NS.suggest($('#s-name', ed), function () { return NSStore.list('biz'); }, function (x) { return x.name; }, function (b) {
-      var keep = { logo: b.logo || '', sign: b.sign || '' };
-      doc.seller = Object.assign(blank().seller, b, keep); delete doc.seller.id; delete doc.seller.created; delete doc.seller.updated;
-      fillForm(); suggestNumber(true); draw();
+      doc.seller = Object.assign(blank().seller, b); delete doc.seller.id; delete doc.seller.created; delete doc.seller.updated;
+      fillForm(); suggestNumber(true); draw(); saveDraft();
     });
     NS.suggest($('#b-name', ed), function () { return NSStore.list('party'); }, function (x) { return x.name; }, function (p) {
       doc.buyer = { name: p.name, addr: p.addr || '', state: p.state || '', gstin: p.gstin || '', phone: p.phone || '' };
-      if (!doc.pos) doc.pos = '';
-      fillForm(); draw();
+      fillForm(); draw(); saveDraft();
     });
   }
 
   function renderItems() {
     var box = $('#items', root);
     box.innerHTML = doc.items.map(function (it, i) {
-      return '<div class="it" data-i="' + i + '"><div class="it-head"><span>Item ' + (i + 1) + '</span>' + (doc.items.length > 1 ? '<button type="button" class="link" data-del="' + i + '" aria-label="Remove item ' + (i + 1) + '">Remove</button>' : '') + '</div>' +
+      var id = function (k) { return 'it-' + k + '-' + i; };
+      var f = function (k, lbl, extra) { return '<div class="f' + (k === 'gst' ? ' it-gst' : '') + '"><label for="' + id(k) + '">' + esc(lbl) + '</label><input id="' + id(k) + '" data-k="' + k + '" value="' + esc(it[k]) + '"' + (extra || '') + '></div>'; };
+      return '<div class="it" data-i="' + i + '"><div class="it-head"><span>' + esc(t('it.n', { n: i + 1 })) + '</span>' + (doc.items.length > 1 ? '<button type="button" class="link" data-del="' + i + '">' + esc(t('it.rm')) + '</button>' : '') + '</div>' +
         '<div class="it-grid">' +
-        '<div class="f it-d"><label for="it-desc-' + i + '">Description</label><input id="it-desc-' + i + '" class="it-desc" data-k="desc" value="' + esc(it.desc) + '" placeholder="Item or service"></div>' +
-        '<div class="f"><label for="it-hsn-' + i + '">HSN/SAC</label><input id="it-hsn-' + i + '" data-k="hsn" inputmode="numeric" maxlength="8" value="' + esc(it.hsn) + '"></div>' +
-        '<div class="f"><label for="it-qty-' + i + '">Qty</label><input id="it-qty-' + i + '" data-k="qty" inputmode="decimal" value="' + esc(it.qty) + '"></div>' +
-        '<div class="f"><label for="it-unit-' + i + '">Unit</label><input id="it-unit-' + i + '" data-k="unit" list="dl-units" value="' + esc(it.unit) + '"></div>' +
-        '<div class="f"><label for="it-rate-' + i + '">Rate (₹)</label><input id="it-rate-' + i + '" data-k="rate" inputmode="decimal" value="' + esc(it.rate) + '"></div>' +
-        '<div class="f"><label for="it-disc-' + i + '">Disc. %</label><input id="it-disc-' + i + '" data-k="disc" inputmode="decimal" value="' + esc(it.disc) + '"></div>' +
-        '<div class="f it-gst"><label for="it-gst-' + i + '">GST %</label><input id="it-gst-' + i + '" data-k="gst" inputmode="decimal" list="dl-rates" value="' + esc(it.gst) + '"></div>' +
+        '<div class="f it-d"><label for="' + id('desc') + '">' + esc(t('l.desc')) + '</label><input id="' + id('desc') + '" class="it-desc" data-k="desc" dir="auto" value="' + esc(it.desc) + '" placeholder="' + esc(t('ph.desc')) + '"></div>' +
+        f('hsn', t('l.hsn'), ' inputmode="numeric" maxlength="8" dir="ltr"') + f('qty', t('l.qty'), ' inputmode="decimal" dir="ltr"') + f('unit', t('l.unit'), ' list="dl-units" dir="ltr"') +
+        f('rate', t('l.rate'), ' inputmode="decimal" dir="ltr"') + f('disc', t('l.disc'), ' inputmode="decimal" dir="ltr"') + f('gst', t('l.gst'), ' inputmode="decimal" list="dl-rates" dir="ltr"') +
         '</div></div>';
     }).join('');
-    $$('[data-del]', box).forEach(function (b) { b.addEventListener('click', function () { doc.items.splice(+b.getAttribute('data-del'), 1); renderItems(); draw(); }); });
+    $$('[data-del]', box).forEach(function (b) { b.addEventListener('click', function () { doc.items.splice(+b.getAttribute('data-del'), 1); renderItems(); draw(); saveDraft(); }); });
     $$('.it-desc', box).forEach(function (inp) {
       var i = +inp.closest('.it').getAttribute('data-i');
       NS.suggest(inp, function () { return NSStore.list('item'); }, function (x) { return x.desc; }, function (m) {
         var it = doc.items[i];
-        it.desc = m.desc; it.hsn = m.hsn || ''; it.unit = m.unit || it.unit; it.rate = m.rate != null ? m.rate : it.rate; if (m.gst != null && m.gst !== '') it.gst = m.gst;
-        renderItems(); draw();
+        it.desc = m.desc; it.hsn = m.hsn || ''; it.unit = m.unit || it.unit; if (m.rate != null) it.rate = m.rate; if (m.gst != null && m.gst !== '') it.gst = m.gst;
+        renderItems(); draw(); saveDraft();
       });
     });
     $$('.it-gst', box).forEach(function (f) { f.hidden = doc.kind !== 'tax'; });
@@ -182,7 +172,7 @@
   var SMAP = { 's-name': 'name', 's-addr': 'addr', 's-state': 'state', 's-gstin': 'gstin', 's-phone': 'phone', 's-email': 'email', 's-bankName': 'bankName', 's-bankAcc': 'bankAcc', 's-bankIfsc': 'bankIfsc', 's-bankBranch': 'bankBranch', 's-upi': 'upi' };
   var BMAP = { 'b-name': 'name', 'b-addr': 'addr', 'b-state': 'state', 'b-gstin': 'gstin', 'b-phone': 'phone' };
   var SHMAP = { 'sh-name': 'name', 'sh-addr': 'addr', 'sh-state': 'state' };
-  var DMAP = { 'd-kind': 'kind', 'd-no': 'no', 'd-date': 'date', 'd-due': 'due', 'd-pos': 'pos', 'd-ref': 'ref', 'd-notes': 'notes', 'd-terms': 'terms', 'd-lang': 'lang', 'd-status': 'status', 'd-copy': 'copyLabel' };
+  var DMAP = { 'd-kind': 'kind', 'd-no': 'no', 'd-date': 'date', 'd-due': 'due', 'd-pos': 'pos', 'd-ref': 'ref', 'd-notes': 'notes', 'd-terms': 'terms', 'd-status': 'status', 'd-copy': 'copyLabel' };
 
   function fillForm(onlyLook) {
     var ed = $('#ed', root);
@@ -198,7 +188,7 @@
     }
     $$('[data-accent]', ed).forEach(function (b) { b.setAttribute('aria-checked', String(b.getAttribute('data-accent') === doc.accent)); });
     $('[data-clear="logo"]', ed).hidden = !doc.seller.logo; $('[data-clear="sign"]', ed).hidden = !doc.seller.sign;
-    $('#kind-hint', ed).textContent = doc.kind === 'tax' ? 'For GST-registered sellers charging GST.' : doc.kind === 'supply' ? 'For composition dealers, or for goods and services exempt from GST. No tax is charged.' : 'For sellers who are not registered under GST. No tax is charged.';
+    $('#kind-hint', ed).textContent = t('kh.' + doc.kind);
     $$('.it-gst', ed).forEach(function (f) { f.hidden = doc.kind !== 'tax'; });
     $('#comp-box', ed).hidden = doc.kind !== 'supply';
   }
@@ -211,25 +201,25 @@
   }
 
   function onInput(e) {
-    var t = e.target, id = t.id;
-    if (SMAP[id]) doc.seller[SMAP[id]] = t.value;
-    else if (BMAP[id]) doc.buyer[BMAP[id]] = t.value;
-    else if (SHMAP[id]) { doc.ship = doc.ship || {}; doc.ship[SHMAP[id]] = t.value; }
-    else if (DMAP[id]) doc[DMAP[id]] = t.value;
-    else if (id === 'd-rc') doc.rc = t.checked;
-    else if (id === 'd-round') doc.round = t.checked;
-    else if (id === 'd-comp') doc.comp = t.checked;
-    else if (id === 'b-ship') { doc.ship = t.checked ? (doc.ship || { name: '', addr: '', state: '' }) : null; $('#ship-box', root).hidden = !t.checked; }
-    else if (t.getAttribute('data-k')) { var i = +t.closest('.it').getAttribute('data-i'); doc.items[i][t.getAttribute('data-k')] = t.value; }
+    var el = e.target, id = el.id;
+    if (SMAP[id]) doc.seller[SMAP[id]] = el.value;
+    else if (BMAP[id]) doc.buyer[BMAP[id]] = el.value;
+    else if (SHMAP[id]) { doc.ship = doc.ship || {}; doc.ship[SHMAP[id]] = el.value; }
+    else if (DMAP[id]) doc[DMAP[id]] = el.value;
+    else if (id === 'd-rc') doc.rc = el.checked;
+    else if (id === 'd-round') doc.round = el.checked;
+    else if (id === 'd-comp') doc.comp = el.checked;
+    else if (id === 'b-ship') { doc.ship = el.checked ? (doc.ship || { name: '', addr: '', state: '' }) : null; $('#ship-box', root).hidden = !el.checked; }
+    else if (el.getAttribute('data-k')) { var i = +el.closest('.it').getAttribute('data-i'); doc.items[i][el.getAttribute('data-k')] = el.value; }
+    else return;
     if (id === 's-gstin' || id === 'b-gstin') {
-      t.value = t.value.toUpperCase();
-      var who = id[0] === 's' ? doc.seller : doc.buyer; who.gstin = t.value;
+      el.value = el.value.toUpperCase();
+      var who = id[0] === 's' ? doc.seller : doc.buyer; who.gstin = el.value;
       var r = checkGstin(id);
       if (r.ok && r.state && !who.state && e.type === 'change') { who.state = r.state; $('#' + id[0] + '-state', root).value = r.state; }
     }
     if (id === 'd-kind') fillForm(true);
     if (id === 'd-date' && e.type === 'change') suggestNumber(false);
-    if (id === 'd-lang') loadScriptFont(doc.lang);
     draw(); saveDraft();
   }
 
@@ -254,84 +244,79 @@
     });
   }
 
-  /* ---------- preview ---------- */
-  var UT = { '04': 1, '26': 1, '31': 1, '35': 1, '38': 1 }; /* Union Territories without a legislature charge UTGST */
-  function L_(k) {
-    if (k === 'sgst' && UT[doc.seller.state] && totals(doc).intra) return 'UTGST';
-    return (L[doc.lang] || L.en)[k] || L.en[k];
-  }
+  /* ---------- preview (English, like the printout) ---------- */
   function party(p, title) {
     if (!p || !(p.name || p.addr)) return '<div class="pt"><h4>' + title + '</h4><p class="ph">Customer name and address</p></div>';
     return '<div class="pt"><h4>' + title + '</h4><b>' + esc(p.name) + '</b>' + (p.addr ? '<p>' + esc(p.addr).replace(/\n/g, '<br>') + '</p>' : '') +
       (p.state ? '<p>' + esc(NS.stateName(p.state)) + ' (' + p.state + ')</p>' : '') +
-      (p.gstin ? '<p>' + L_('gstin') + ': <b class="mono">' + esc(p.gstin) + '</b></p>' : '') +
-      (p.phone ? '<p>' + L_('ph') + ': ' + esc(p.phone) + '</p>' : '') + '</div>';
+      (p.gstin ? '<p>' + P.gstin + ': <b class="mono">' + esc(p.gstin) + '</b></p>' : '') +
+      (p.phone ? '<p>' + P.ph + ': ' + esc(p.phone) + '</p>' : '') + '</div>';
   }
   function draw() {
     if (!sheet) return;
-    var d = doc, s = d.seller, t = totals(d), tax = d.kind === 'tax';
+    var d = doc, s = d.seller, tt = totals(d), tax = d.kind === 'tax', SG = sgstName(d);
     var posCode = d.pos || d.buyer.state;
     var cols = tax ? 9 : 7;
-    var h = '<div class="sh" style="--ac:' + esc(d.accent) + '" lang="' + (d.lang === 'en' ? 'en-IN' : d.lang) + '">' +
-      (d.status === 'paid' ? '<div class="stamp">' + L_('paid') + '</div>' : '') +
+    var h = '<div class="sh" style="--ac:' + esc(d.accent) + '" lang="en-IN" dir="ltr">' +
+      (d.status === 'paid' ? '<div class="stamp">' + P.paid + '</div>' : '') +
       '<header class="sh-top"><div class="sh-from">' + (s.logo ? '<img class="logo" src="' + s.logo + '" alt="">' : '') +
         '<div><h2>' + (s.name ? esc(s.name) : '<span class="ph">Your business name</span>') + '</h2>' +
         (s.addr ? '<p>' + esc(s.addr).replace(/\n/g, '<br>') + '</p>' : '<p class="ph">Address</p>') +
         (s.state ? '<p>' + esc(NS.stateName(s.state)) + ' (' + s.state + ')</p>' : '') +
-        (s.gstin ? '<p>' + L_('gstin') + ': <b class="mono">' + esc(s.gstin) + '</b></p>' : '') +
-        ((s.phone || s.email) ? '<p>' + [s.phone ? L_('ph') + ': ' + esc(s.phone) : '', esc(s.email)].filter(Boolean).join(' · ') + '</p>' : '') +
-      '</div></div><div class="sh-title"><h1>' + L_(d.kind) + '</h1>' + (d.copyLabel ? '<p class="copy">' + L_(d.copyLabel) + '</p>' : '') + '</div></header>' +
-      '<table class="meta"><tr><th>' + L_('no') + '</th><td class="mono">' + esc(d.no) + '</td><th>' + L_('date') + '</th><td>' + NS.fmtDate(d.date) + '</td></tr>' +
-        '<tr>' + (T.due ? '<th>' + L_('due') + '</th><td>' + NS.fmtDate(d.due) + '</td>' : '') + '<th>' + L_('pos') + '</th><td' + (T.due ? '' : ' colspan="3"') + '>' + (posCode ? esc(NS.stateName(posCode)) + ' (' + posCode + ')' : '') + '</td></tr>' +
-        (tax || d.ref ? '<tr>' + (tax ? '<th>' + L_('rc') + '</th><td>' + (d.rc ? L_('yes') : L_('no2')) + '</td>' : '') + '<th>' + L_('ref') + '</th><td' + (tax ? '' : ' colspan="3"') + '>' + esc(d.ref) + '</td></tr>' : '') +
+        (s.gstin ? '<p>' + P.gstin + ': <b class="mono">' + esc(s.gstin) + '</b></p>' : '') +
+        ((s.phone || s.email) ? '<p>' + [s.phone ? P.ph + ': ' + esc(s.phone) : '', esc(s.email)].filter(Boolean).join(' · ') + '</p>' : '') +
+      '</div></div><div class="sh-title"><h1>' + P[d.kind] + '</h1>' + (d.copyLabel ? '<p class="copy">' + P[d.copyLabel] + '</p>' : '') + '</div></header>' +
+      '<table class="meta"><tr><th>' + P.no + '</th><td class="mono">' + esc(d.no) + '</td><th>' + P.date + '</th><td>' + NS.fmtDate(d.date) + '</td></tr>' +
+        '<tr>' + (T.due ? '<th>' + P.due + '</th><td>' + NS.fmtDate(d.due) + '</td>' : '') + '<th>' + P.pos + '</th><td' + (T.due ? '' : ' colspan="3"') + '>' + (posCode ? esc(NS.stateName(posCode)) + ' (' + posCode + ')' : '') + '</td></tr>' +
+        (tax || d.ref ? '<tr>' + (tax ? '<th>' + P.rc + '</th><td>' + (d.rc ? P.yes : P.no2) + '</td>' : '') + '<th>' + P.ref + '</th><td' + (tax ? '' : ' colspan="3"') + '>' + esc(d.ref) + '</td></tr>' : '') +
       '</table>' +
-      '<div class="parties">' + party(d.buyer, L_('billto')) + (d.ship ? party(d.ship, L_('shipto')) : '') + '</div>' +
-      '<table class="lines"><thead><tr><th>#</th><th class="l">' + L_('item') + '</th><th>' + L_('hsn') + '</th><th class="n">' + L_('qty') + '</th><th class="n">' + L_('rate') + '</th><th class="n">' + L_('disc') + '</th><th class="n">' + L_('taxable') + '</th>' + (tax ? '<th class="n">' + L_('gst') + '</th>' : '') + (tax ? '<th class="n">' + L_('amount') + '</th>' : '') + '</tr></thead><tbody>' +
-      (t.rows.length ? t.rows.map(function (r, i) {
+      '<div class="parties">' + party(d.buyer, P.billto) + (d.ship ? party(d.ship, P.shipto) : '') + '</div>' +
+      '<table class="lines"><thead><tr><th>#</th><th class="l">' + P.item + '</th><th>' + P.hsn + '</th><th class="n">' + P.qty + '</th><th class="n">' + P.rate + '</th><th class="n">' + P.disc + '</th><th class="n">' + P.taxable + '</th>' + (tax ? '<th class="n">' + P.gst + '</th><th class="n">' + P.amount + '</th>' : '') + '</tr></thead><tbody>' +
+      (tt.rows.length ? tt.rows.map(function (r, i) {
         return '<tr><td>' + (i + 1) + '</td><td class="l">' + esc(r.it.desc) + '</td><td class="mono">' + esc(r.it.hsn) + '</td><td class="n">' + NS.qty(num(r.it.qty)) + ' ' + esc(r.it.unit) + '</td><td class="n">' + NS.money(num(r.it.rate), false) + '</td><td class="n">' + (num(r.it.disc) ? num(r.it.disc) + '%' : '') + '</td><td class="n">' + NS.money(r.taxable, false) + '</td>' +
           (tax ? '<td class="n">' + r.g + '%</td><td class="n">' + NS.money(r.amount, false) + '</td>' : '') + '</tr>';
       }).join('') : '<tr><td colspan="' + cols + '" class="ph">Items you add appear here</td></tr>') +
       '</tbody></table>' +
       '<div class="foot"><div class="foot-l">' +
-        '<p class="words"><span>' + L_('words') + ':</span> <b>' + NS.inWords(t.grand) + '</b></p>' +
-        (tax && Object.keys(t.sum).length ? summaryTable(t) : '') +
-        (d.kind === 'supply' && d.comp !== false ? '<p class="small">' + L_('supplynote') + '</p>' : '') +
-        (s.bankAcc || s.bankName ? '<div class="bank"><h4>' + L_('bank') + '</h4><p>' + esc(s.bankName) + (s.bankAcc ? '<br>' + L_('acc') + ' <b class="mono">' + esc(s.bankAcc) + '</b>' : '') + (s.bankIfsc ? '<br>' + L_('ifsc') + ' <b class="mono">' + esc(s.bankIfsc) + '</b>' : '') + (s.bankBranch ? '<br>' + L_('branch') + ': ' + esc(s.bankBranch) : '') + '</p></div>' : '') +
-      '</div><div class="foot-r"><table class="tot"><tr><th>' + L_('subtotal') + '</th><td>' + NS.money(t.taxable) + '</td></tr>' +
-        (tax ? (t.intra ? '<tr><th>' + L_('cgst') + '</th><td>' + NS.money(t.cgst) + '</td></tr><tr><th>' + L_('sgst') + '</th><td>' + NS.money(t.sgst) + '</td></tr>' : '<tr><th>' + L_('igst') + '</th><td>' + NS.money(t.igst) + '</td></tr>') : '') +
-        (t.roundOff ? '<tr><th>' + L_('round') + '</th><td>' + (t.roundOff > 0 ? '+' : '−') + NS.money(Math.abs(t.roundOff)) + '</td></tr>' : '') +
-        '<tr class="grand"><th>' + L_('total') + '</th><td>' + NS.money(t.grand) + '</td></tr></table>' +
-        (s.upi && t.grand > 0 && d.status !== 'paid' ? '<div class="qr"><div class="qr-img" data-qr></div><small>' + L_('upi') + '<br><b class="mono">' + esc(s.upi) + '</b></small></div>' : '') +
+        '<p class="words"><span>' + P.words + ':</span> <b>' + NS.inWords(tt.grand) + '</b></p>' +
+        (tax && Object.keys(tt.sum).length ? summaryTable(tt, SG) : '') +
+        (d.kind === 'supply' && d.comp !== false ? '<p class="small">' + P.supplynote + '</p>' : '') +
+        (s.bankAcc || s.bankName ? '<div class="bank"><h4>' + P.bank + '</h4><p>' + esc(s.bankName) + (s.bankAcc ? '<br>' + P.acc + ' <b class="mono">' + esc(s.bankAcc) + '</b>' : '') + (s.bankIfsc ? '<br>' + P.ifsc + ' <b class="mono">' + esc(s.bankIfsc) + '</b>' : '') + (s.bankBranch ? '<br>' + P.branch + ': ' + esc(s.bankBranch) : '') + '</p></div>' : '') +
+      '</div><div class="foot-r"><table class="tot"><tr><th>' + P.subtotal + '</th><td>' + NS.money(tt.taxable) + '</td></tr>' +
+        (tax ? (tt.intra ? '<tr><th>' + P.cgst + '</th><td>' + NS.money(tt.cgst) + '</td></tr><tr><th>' + SG + '</th><td>' + NS.money(tt.sgst) + '</td></tr>' : '<tr><th>' + P.igst + '</th><td>' + NS.money(tt.igst) + '</td></tr>') : '') +
+        (tt.roundOff ? '<tr><th>' + P.round + '</th><td>' + (tt.roundOff > 0 ? '+' : '−') + NS.money(Math.abs(tt.roundOff)) + '</td></tr>' : '') +
+        '<tr class="grand"><th>' + P.total + '</th><td>' + NS.money(tt.grand) + '</td></tr></table>' +
+        (s.upi && tt.grand > 0 && d.status !== 'paid' ? '<div class="qr"><div class="qr-img" data-qr></div><small>' + P.upi + '<br><b class="mono">' + esc(s.upi) + '</b></small></div>' : '') +
       '</div></div>' +
-      (d.notes || d.terms ? '<div class="nt">' + (d.notes ? '<div><h4>' + L_('notes') + '</h4><p>' + esc(d.notes).replace(/\n/g, '<br>') + '</p></div>' : '') + (d.terms ? '<div><h4>' + L_('terms') + '</h4><p>' + esc(d.terms).replace(/\n/g, '<br>') + '</p></div>' : '') + '</div>' : '') +
-      '<div class="signbox"><p>' + L_('for') + ' <b>' + esc(s.name || '') + '</b></p>' + (s.sign ? '<img src="' + s.sign + '" alt="">' : '<div class="sp"></div>') + '<p>' + L_('sign') + '</p></div>' +
-      '<p class="made">Made free at ' + esc(location.hostname.replace(/^www\./, '') || 'billing.niveshsahayak.in') + '</p>' +
+      (d.notes || d.terms ? '<div class="nt">' + (d.notes ? '<div><h4>' + P.notes + '</h4><p>' + esc(d.notes).replace(/\n/g, '<br>') + '</p></div>' : '') + (d.terms ? '<div><h4>' + P.terms + '</h4><p>' + esc(d.terms).replace(/\n/g, '<br>') + '</p></div>' : '') + '</div>' : '') +
+      '<div class="signbox"><p>' + P['for'] + ' <b>' + esc(s.name || '') + '</b></p>' + (s.sign ? '<img src="' + s.sign + '" alt="">' : '<div class="sp"></div>') + '<p>' + P.sign + '</p></div>' +
+      '<p class="made">Made free at ' + esc(/^(localhost|127\.)/.test(location.hostname) ? 'billing.niveshsahayak.in' : location.hostname.replace(/^www\./, '')) + '</p>' +
       '</div>';
     sheet.innerHTML = h;
     var q = $('[data-qr]', sheet);
-    if (q) drawQr(q, s, d, t.grand);
+    if (q) drawQr(q, s, d, tt.grand);
     var es = $('#ed-sums', root);
-    if (es) es.innerHTML = '<span>' + t.rows.length + ' item' + (t.rows.length === 1 ? '' : 's') + '</span><span>Taxable ' + NS.money(t.taxable) + '</span>' + (tax ? '<span>GST ' + NS.money(t.cgst + t.sgst + t.igst) + (t.intra ? ' (CGST + ' + L_('sgst') + ')' : ' (IGST)') + '</span>' : '') + '<b>Total ' + NS.money(t.grand) + '</b>';
+    if (es) es.innerHTML = '<span>' + esc(t('sum.items', { n: tt.rows.length })) + '</span><span>' + esc(t('sum.taxable', { v: NS.money(tt.taxable) })) + '</span>' +
+      (tax ? '<span>' + esc(t('sum.gst', { v: NS.money(tt.cgst + tt.sgst + tt.igst) })) + (tt.intra ? ' (CGST + ' + SG + ')' : ' (IGST)') + '</span>' : '') + '<b>' + esc(t('sum.total', { v: NS.money(tt.grand) })) + '</b>';
     fit();
   }
-  function summaryTable(t) {
-    var rows = Object.keys(t.sum).map(function (k) { return t.sum[k]; });
-    return '<table class="sum"><caption>' + L_('summary') + '</caption><thead><tr><th>' + L_('hsn') + '</th><th class="n">' + L_('taxable') + '</th><th class="n">' + L_('gst') + '</th>' +
-      (t.intra ? '<th class="n">' + L_('cgst') + '</th><th class="n">' + L_('sgst') + '</th>' : '<th class="n">' + L_('igst') + '</th>') + '</tr></thead><tbody>' +
-      rows.map(function (s) { return '<tr><td class="mono">' + esc(s.hsn) + '</td><td class="n">' + NS.money(s.taxable, false) + '</td><td class="n">' + s.g + '%</td>' + (t.intra ? '<td class="n">' + NS.money(s.tax / 2, false) + '</td><td class="n">' + NS.money(s.tax / 2, false) + '</td>' : '<td class="n">' + NS.money(s.tax, false) + '</td>') + '</tr>'; }).join('') +
+  function summaryTable(tt, SG) {
+    var rows = Object.keys(tt.sum).map(function (k) { return tt.sum[k]; });
+    return '<table class="sum"><caption>' + P.summary + '</caption><thead><tr><th>' + P.hsn + '</th><th class="n">' + P.taxable + '</th><th class="n">' + P.gst + '</th>' +
+      (tt.intra ? '<th class="n">' + P.cgst + '</th><th class="n">' + SG + '</th>' : '<th class="n">' + P.igst + '</th>') + '</tr></thead><tbody>' +
+      rows.map(function (s) { return '<tr><td class="mono">' + esc(s.hsn) + '</td><td class="n">' + NS.money(s.taxable, false) + '</td><td class="n">' + s.g + '%</td>' + (tt.intra ? '<td class="n">' + NS.money(s.tax / 2, false) + '</td><td class="n">' + NS.money(s.tax / 2, false) + '</td>' : '<td class="n">' + NS.money(s.tax, false) + '</td>') + '</tr>'; }).join('') +
       '</tbody></table>';
   }
   function drawQr(box, s, d, amount) {
     if (!window.qrcode) return;
-    var link = 'upi://pay?pa=' + encodeURIComponent(s.upi.trim()) + '&pn=' + encodeURIComponent((s.name || '').slice(0, 40)) + '&am=' + amount.toFixed(2) + '&cu=INR&tn=' + encodeURIComponent((T.name + ' ' + d.no).slice(0, 40));
+    var link = 'upi://pay?pa=' + encodeURIComponent(s.upi.trim()) + '&pn=' + encodeURIComponent((s.name || '').slice(0, 40)) + '&am=' + amount.toFixed(2) + '&cu=INR&tn=' + encodeURIComponent(('Invoice ' + d.no).slice(0, 40));
     try { var qr = qrcode(0, 'M'); qr.addData(link); qr.make(); box.innerHTML = qr.createSvgTag({ cellSize: 3, margin: 0, scalable: true }); } catch (e) { box.hidden = true; }
   }
   function fit() {
     var wrap = $('.pv', root), sc = $('.pv-scale', root);
-    if (!wrap || !sc) return;
-    var w = wrap.clientWidth, k = Math.min(1, w / 794);
+    if (!wrap || !sc || !wrap.clientWidth) return;
+    var k = Math.min(1, wrap.clientWidth / 794);
     sc.style.transform = 'scale(' + k + ')';
-    sc.style.height = 'auto';
     wrap.style.height = (sheet.offsetHeight * k) + 'px';
   }
 
@@ -346,23 +331,15 @@
         URL.revokeObjectURL(url);
         res(c.toDataURL('image/png'));
       };
-      img.onerror = function () { NS.toast('That picture could not be read.', 'bad'); res(''); };
+      img.onerror = function () { NS.toast(t('img.bad'), 'bad'); res(''); };
       img.src = url;
     });
-  }
-  var fontLoaded = {};
-  function loadScriptFont(lang) {
-    var fam = { hi: 'Noto+Sans+Devanagari', pa: 'Noto+Sans+Gurmukhi' }[lang];
-    if (!fam || fontLoaded[lang]) return;
-    fontLoaded[lang] = true;
-    document.head.appendChild(NS.el('link', { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=' + fam + ':wght@400;600;700&display=swap' }));
   }
 
   /* ---------- draft (so a reload never loses typing) ---------- */
   var dkey;
   function saveDraft() { try { localStorage.setItem(dkey, JSON.stringify({ doc: doc, id: editingId })); } catch (e) {} }
   function loadDraft() { try { var j = JSON.parse(localStorage.getItem(dkey) || 'null'); return j && j.doc ? j : null; } catch (e) { return null; } }
-  function clearDraft() { try { localStorage.removeItem(dkey); } catch (e) {} }
 
   /* ---------- save, masters ---------- */
   function key(s) { return String(s || '').trim().toLowerCase(); }
@@ -373,15 +350,15 @@
     });
   }
   function validate() {
-    var t = totals(doc), probs = [];
-    if (!doc.seller.name.trim()) probs.push(['s-name', 'Type your business name.']);
-    if (!t.rows.length) probs.push(['it-desc-0', 'Add at least one item with a rate.']);
-    if (!String(doc.no).trim()) probs.push(['d-no', 'Give this ' + T.name.toLowerCase() + ' a number.']);
-    if (String(doc.no).length > 16) probs.push(['d-no', 'GST rules allow up to 16 characters in the number.']);
-    if (/[^A-Za-z0-9\/\-]/.test(doc.no)) probs.push(['d-no', 'Use only letters, numbers, / and - in the number.']);
-    if (!NS.gstinCheck(doc.seller.gstin).ok) probs.push(['s-gstin', 'Your GSTIN looks wrong.']);
-    if (!NS.gstinCheck(doc.buyer.gstin).ok) probs.push(['b-gstin', 'The customer’s GSTIN looks wrong.']);
-    if (doc.kind === 'tax' && !doc.seller.gstin) probs.push(['s-gstin', 'A tax invoice needs your GSTIN. If you are not registered, choose "Invoice (not GST registered)" as the type.']);
+    var tt = totals(doc), probs = [];
+    if (!doc.seller.name.trim()) probs.push(['s-name', t('v.bname')]);
+    if (!tt.rows.length) probs.push(['it-desc-0', t('v.item')]);
+    if (!String(doc.no).trim()) probs.push(['d-no', tw('v.no')]);
+    if (String(doc.no).length > 16) probs.push(['d-no', t('v.len')]);
+    if (/[^A-Za-z0-9\/\-]/.test(doc.no)) probs.push(['d-no', t('v.chars')]);
+    if (!NS.gstinCheck(doc.seller.gstin).ok) probs.push(['s-gstin', t('v.sg')]);
+    if (!NS.gstinCheck(doc.buyer.gstin).ok) probs.push(['b-gstin', t('v.bg')]);
+    if (doc.kind === 'tax' && !doc.seller.gstin) probs.push(['s-gstin', t('v.tax')]);
     return probs;
   }
   function save() {
@@ -394,14 +371,14 @@
     }
     return NSStore.list('doc').then(function (all) {
       var dup = all.filter(function (d) { return d.id !== editingId && d.type === doc.type && key(d.no) === key(doc.no) && NS.fy(d.date) === NS.fy(doc.date) && key(d.seller && d.seller.name) === key(doc.seller.name); })[0];
-      if (dup && !confirm('There is already a saved ' + T.name.toLowerCase() + ' ' + doc.no + ' for this business in this financial year. GST rules need a different number for every bill. Save anyway?')) throw new Error('cancel');
+      if (dup && !confirm(tw('c.dup', { no: doc.no }))) throw new Error('cancel');
     }).then(function () {
       var s = doc.seller, b = doc.buyer, jobs = [];
       jobs.push(upsert('biz', function (x) { return key(x.name) === key(s.name); }, JSON.parse(JSON.stringify(s))));
       if (b.name.trim()) jobs.push(upsert('party', function (x) { return key(x.name) === key(b.name); }, { name: b.name.trim(), addr: b.addr, state: b.state, gstin: b.gstin, phone: b.phone }));
       doc.items.forEach(function (it) {
-        if (!it.desc.trim()) return;
-        jobs.push(upsert('item', function (x) { return key(x.desc) === key(it.desc); }, { desc: it.desc.trim(), hsn: it.hsn, unit: it.unit, rate: it.rate, gst: it.gst }));
+        if (!String(it.desc).trim()) return;
+        jobs.push(upsert('item', function (x) { return key(x.desc) === key(it.desc); }, { desc: String(it.desc).trim(), hsn: it.hsn, unit: it.unit, rate: it.rate, gst: it.gst }));
       });
       return Promise.all(jobs);
     }).then(function () {
@@ -411,22 +388,22 @@
       return NSStore.put('doc', rec);
     }).then(function (rec) {
       editingId = rec.id; saveDraft();
-      NS.toast(T.name + ' ' + doc.no + ' saved.');
+      NS.toast(tw('saved', { no: doc.no }));
       NS.folderWrite(false);
       NS.checkReminder();
       setStatus();
       return rec;
-    }).catch(function (e) { if (e.message !== 'cancel') { NS.toast('Could not save: ' + e.message, 'bad'); } throw e; });
+    }).catch(function (e) { if (e.message !== 'cancel') NS.toast(t('nosave', { e: e.message }), 'bad'); throw e; });
   }
   function setStatus() {
     var st = $('#tool-status', root);
-    if (st) st.textContent = editingId ? 'Editing saved ' + T.name.toLowerCase() + ' ' + doc.no : 'New ' + T.name.toLowerCase() + ' (not saved yet)';
+    if (st) st.textContent = editingId ? tw('st.edit', { no: doc.no }) : tw('st.new');
   }
 
-  function startNew(keepSeller) {
-    var seller = keepSeller ? doc.seller : null;
+  function startNew() {
+    var seller = doc.seller;
     doc = blank(); editingId = null;
-    if (seller) doc.seller = seller;
+    doc.seller = seller;
     fillForm(); suggestNumber(true); draw(); saveDraft(); setStatus();
   }
   function openDoc(rec, asCopy) {
@@ -439,55 +416,59 @@
   }
 
   /* ---------- history ---------- */
-  function openHistory() {
+  var histOpen = false;
+  function renderHistory() {
     var dlg = $('#ns-history'); if (!dlg) return;
     var list = $('[data-hist-list]', dlg), q = $('[data-hist-q]', dlg);
-    function render() {
-      NSStore.list('doc').then(function (all) {
-        var v = key(q.value);
-        var rows = all.filter(function (d) { return d.type === doc.type; }).filter(function (d) {
-          return !v || [d.no, d.buyer && d.buyer.name, d.seller && d.seller.name].join(' ').toLowerCase().indexOf(v) >= 0;
-        }).sort(function (a, b) { return (b.date || '').localeCompare(a.date || '') || (b.updated || 0) - (a.updated || 0); });
-        list.innerHTML = rows.length ? rows.map(function (d) {
-          return '<li><div><b class="mono">' + esc(d.no) + '</b> · ' + NS.fmtDate(d.date) + '<br><span>' + esc(d.buyer && d.buyer.name || 'No customer') + '</span> · <b>' + NS.money(d.total || 0) + '</b> <span class="pill ' + (d.status === 'paid' ? 'ok' : '') + '">' + (d.status === 'paid' ? 'Paid' : 'Not paid') + '</span></div>' +
-            '<div class="row"><button type="button" class="btn sm" data-h="open" data-id="' + d.id + '">Open</button><button type="button" class="btn sm" data-h="copy" data-id="' + d.id + '">Copy as new</button>' +
-            '<button type="button" class="btn sm" data-h="paid" data-id="' + d.id + '">' + (d.status === 'paid' ? 'Mark not paid' : 'Mark paid') + '</button><button type="button" class="btn sm danger" data-h="del" data-id="' + d.id + '">Delete</button></div></li>';
-        }).join('') : '<li class="empty">' + (v ? 'Nothing matches your search.' : 'No saved ' + T.name.toLowerCase() + 's yet. Press Save after making one.') + '</li>';
-      });
-    }
+    NSStore.list('doc').then(function (all) {
+      var v = key(q.value);
+      var rows = all.filter(function (d) { return d.type === doc.type; }).filter(function (d) {
+        return !v || [d.no, d.buyer && d.buyer.name, d.seller && d.seller.name].join(' ').toLowerCase().indexOf(v) >= 0;
+      }).sort(function (a, b) { return (b.date || '').localeCompare(a.date || '') || (b.updated || 0) - (a.updated || 0); });
+      list.innerHTML = rows.length ? rows.map(function (d) {
+        return '<li><div><b class="mono">' + esc(d.no) + '</b> · ' + NS.fmtDate(d.date) + '<br><span>' + esc(d.buyer && d.buyer.name || t('h.nocust')) + '</span> · <b>' + NS.money(d.total || 0) + '</b> <span class="pill ' + (d.status === 'paid' ? 'ok' : '') + '">' + esc(t(d.status === 'paid' ? 'h.paidp' : 'h.unpaidp')) + '</span></div>' +
+          '<div class="row"><button type="button" class="btn sm" data-h="open" data-id="' + d.id + '">' + esc(t('h.open')) + '</button><button type="button" class="btn sm" data-h="copy" data-id="' + d.id + '">' + esc(t('h.copy')) + '</button>' +
+          '<button type="button" class="btn sm" data-h="paid" data-id="' + d.id + '">' + esc(t(d.status === 'paid' ? 'h.unpaid' : 'h.paid')) + '</button><button type="button" class="btn sm danger" data-h="del" data-id="' + d.id + '">' + esc(t('h.del')) + '</button></div></li>';
+      }).join('') : '<li class="empty">' + esc(t(v ? 'h.nomatch' : 'h.none')) + '</li>';
+    });
+  }
+  function openHistory() {
+    var dlg = $('#ns-history'); if (!dlg) return;
     if (!dlg._wired) {
       dlg._wired = true;
-      q.addEventListener('input', render);
-      list.addEventListener('click', function (e) {
+      $('[data-hist-q]', dlg).addEventListener('input', renderHistory);
+      dlg.addEventListener('close', function () { histOpen = false; });
+      $('[data-hist-list]', dlg).addEventListener('click', function (e) {
         var b = e.target.closest('[data-h]'); if (!b) return;
         var id = b.getAttribute('data-id'), act = b.getAttribute('data-h');
         NSStore.get('doc', id).then(function (rec) {
           if (!rec) return;
           if (act === 'open' || act === 'copy') { dlg.close(); openDoc(rec, act === 'copy'); }
-          else if (act === 'paid') { rec.status = rec.status === 'paid' ? 'unpaid' : 'paid'; return NSStore.put('doc', rec).then(function () { if (editingId === id) { doc.status = rec.status; fillForm(); draw(); } render(); }); }
-          else if (act === 'del' && confirm('Delete ' + T.name.toLowerCase() + ' ' + rec.no + '? This cannot be undone (unless you have a backup file).')) {
-            return NSStore.del('doc', id).then(function () { if (editingId === id) { editingId = null; setStatus(); } render(); NS.toast('Deleted.'); });
+          else if (act === 'paid') { rec.status = rec.status === 'paid' ? 'unpaid' : 'paid'; return NSStore.put('doc', rec).then(function () { if (editingId === id) { doc.status = rec.status; fillForm(); draw(); } renderHistory(); }); }
+          else if (act === 'del' && confirm(tw('c.del', { no: rec.no }))) {
+            return NSStore.del('doc', id).then(function () { if (editingId === id) { editingId = null; setStatus(); } renderHistory(); NS.toast(t('deleted')); });
           }
         });
       });
     }
-    render();
+    histOpen = true;
+    renderHistory();
     dlg.showModal ? dlg.showModal() : dlg.setAttribute('open', '');
   }
 
   /* ---------- print, share ---------- */
   function printDoc() {
     var old = document.title;
-    document.title = T.name + ' ' + (doc.no || '') + (doc.buyer.name ? ' - ' + doc.buyer.name : '');
+    document.title = 'Invoice ' + (doc.no || '') + (doc.buyer.name ? ' - ' + doc.buyer.name : '');
     showTab('preview', true);
     fit();
     setTimeout(function () { window.print(); document.title = old; }, 60);
   }
   function shareDoc() {
-    var t = totals(doc);
-    var txt = T.name + ' ' + doc.no + ' from ' + (doc.seller.name || '') + '\nDate: ' + NS.fmtDate(doc.date) + (doc.due ? '\nDue: ' + NS.fmtDate(doc.due) : '') + '\nAmount: ' + NS.money(t.grand) +
+    var tt = totals(doc);
+    var txt = 'Invoice ' + doc.no + ' from ' + (doc.seller.name || '') + '\nDate: ' + NS.fmtDate(doc.date) + (doc.due ? '\nDue: ' + NS.fmtDate(doc.due) : '') + '\nAmount: ' + NS.money(tt.grand) +
       (doc.seller.upi ? '\nPay by UPI: ' + doc.seller.upi : '') + (doc.seller.bankAcc ? '\nBank: ' + doc.seller.bankName + ' A/c ' + doc.seller.bankAcc + ' IFSC ' + doc.seller.bankIfsc : '');
-    if (navigator.share) navigator.share({ title: T.name + ' ' + doc.no, text: txt }).catch(function () {});
+    if (navigator.share) navigator.share({ title: 'Invoice ' + doc.no, text: txt }).catch(function () {});
     else window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank', 'noopener');
   }
 
@@ -498,24 +479,35 @@
     if (!quiet && which === 'preview') fit();
   }
 
+  /* ---------- labels of the fixed buttons ---------- */
+  function labelButtons() {
+    var L = { 'new': tw('b.new'), history: tw('b.hist'), save: t('b.save'), print: t('b.print'), share: t('b.share') };
+    $$('[data-do]').forEach(function (b) { var k = b.getAttribute('data-do'); if (L[k]) b.textContent = L[k]; });
+    $$('[data-tab-btn]', root).forEach(function (b) { b.textContent = t('tab.' + b.getAttribute('data-tab-btn')); });
+    var pv = $('.pv', root); if (pv) pv.setAttribute('aria-label', t('tab.preview'));
+    var dlg = $('#ns-history');
+    if (dlg) { $('h2', dlg).textContent = t('h.title'); $('label', dlg).textContent = t('h.search'); }
+  }
+
   /* ---------- start ---------- */
   function init() {
     root = $('#tool');
     if (!root) return;
-    T = TYPES[root.getAttribute('data-doc')] || TYPES.invoice;
+    type = root.getAttribute('data-doc') || 'invoice';
+    T = TYPES[type] || TYPES.invoice;
     sheet = $('#sheet', root);
-    dkey = 'ns-draft-' + root.getAttribute('data-doc');
+    dkey = 'ns-draft-' + type;
+    var ed = $('#ed', root);
+    ed.addEventListener('input', onInput);
+    ed.addEventListener('change', onInput);
     doc = blank();
-    buildEditor();
     var dr = loadDraft();
-    if (dr) { doc = Object.assign(blank(), dr.doc); editingId = dr.id || null; }
-    fillForm(); draw(); setStatus();
-    loadScriptFont(doc.lang);
+    if (dr) { doc = Object.assign(blank(), dr.doc); delete doc.lang; editingId = dr.id || null; }
+    function render() { buildEditor(); fillForm(); draw(); setStatus(); labelButtons(); if (histOpen) renderHistory(); }
+    render();
+    document.addEventListener('ns-lang', render);
     NSStore.ready().then(function () {
-      if (!dr) {
-        /* first visit: offer the last business used, as a suggestion only */
-        suggestNumber(true);
-      }
+      if (!dr) suggestNumber(true);
       NS.checkReminder();
       NSStore.persist().catch(function () {});
       root.classList.add('live');
@@ -527,7 +519,7 @@
         if (a === 'save') save().catch(function () {});
         else if (a === 'print') printDoc();
         else if (a === 'share') shareDoc();
-        else if (a === 'new') { if (!editingId && totals(doc).rows.length && !confirm('Start a new ' + T.name.toLowerCase() + '? This one is not saved yet.')) return; startNew(true); }
+        else if (a === 'new') { if (!editingId && totals(doc).rows.length && !confirm(tw('c.new'))) return; startNew(); }
         else if (a === 'history') openHistory();
       });
     });
