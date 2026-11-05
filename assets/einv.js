@@ -23,7 +23,7 @@
   /* words printed on the invoice (English, like the rest of the printout) */
   var P = { irn: 'IRN', ack: 'Ack No.', ackdt: 'Ack Date', ewb: 'E-Way Bill No.', ewbdt: 'E-Way Bill Date', till: 'Valid till', qr: 'e-Invoice QR' };
 
-  function ex(d) { var e = d.einv || (d.einv = { sup: 'B2B', dist: '0', mode: '1', veh: '', vtype: 'R', tid: '', tname: '', tdoc: '', tdate: '', withEwb: false }); if (e.aato == null) e.aato = (d.seller && d.seller.aato) || savedAato(); return e; }
+  function ex(d) { var e = d.einv || (d.einv = { sup: 'B2B', dist: '0', mode: '1', veh: '', vtype: 'R', tid: '', tname: '', tdoc: '', tdate: '', withEwb: false }); if (e.aato == null) e.aato = (d.seller && d.seller.aato) || savedAato(); if (d.type === 'exp' && d.kind) e.sup = d.kind.toUpperCase(); return e; }
   function days(from) { return Math.round((Date.parse(NS.today()) - Date.parse(from)) / 864e5); }
   function dmy(iso) { var m = String(iso || '').match(/^(\d{4})-(\d\d)-(\d\d)/); return m ? m[3] + '/' + m[2] + '/' + m[1] : ''; }
   function digits(s) { return String(s || '').replace(/\D/g, ''); }
@@ -39,6 +39,8 @@
   function phone(p) { var x = digits(p); if (x.length === 12 && x.slice(0, 2) === '91') x = x.slice(2); return x.length >= 6 && x.length <= 12 ? x : null; }
   function email(e) { e = String(e || '').trim(); return /^[^\s@]{1,64}@[^\s@]+\.[^\s@]+$/.test(e) && e.length >= 6 && e.length <= 100 ? e : null; }
   function put(o, k, v) { if (v !== '' && v != null) o[k] = v; return o; }
+  /* the e-way bill portal codes a buyer outside India as 99 ("Other Countries"); our state list uses 96 like the e-invoice */
+  function ewbState(c) { return c === '96' ? 99 : +c; }
   function fileName(prefix, no) { return prefix + '-' + (String(no || 'invoice').replace(/[^A-Za-z0-9-]+/g, '-').replace(/^-|-$/g, '') || 'invoice') + '.json'; }
 
   /* item lines with the portal's arithmetic: CGST = SGST per line, totals summed from lines */
@@ -61,7 +63,7 @@
       need(/^[1-9]\d{5}$/.test(digits(who.pin)), pre + '-pin', t('ev.pin'));
       need(!!who.state, pre + '-state', t('ev.state'));
     }
-    if (what === 'einv' && d.kind !== 'tax') bad.push(['d-kind', t('ev.tax')]);
+    if (what === 'einv' && d.kind !== 'tax' && d.type !== 'exp') bad.push(['d-kind', t('ev.tax')]);
     need(NS.gstinCheck(s.gstin).ok && s.gstin.length === 15, 's-gstin', t(what === 'ewb' ? 'ev.ewbseller' : 'ev.sg'));
     need(!!s.name.trim(), 's-name', t('v.bname'));
     place(s, 's');
@@ -99,7 +101,7 @@
       /* the portal refuses an e-way bill for a document more than 180 days old (since 1 Jan 2025) */
       if (days(d.date) > 180) bad.push(['d-date', t('ev.old180')]);
       if (what === 'ewb') {
-        var inside = !d.pos || d.pos === s.state, lim = inside && EWB_LIMIT[s.state] || 50000;
+        var dest = d.pos || b.state, inside = !dest || dest === s.state, lim = inside && EWB_LIMIT[s.state] || 50000;
         if (tt.grand <= lim) note.push(lim > 50000 ? t('ev.smallst', { st: NS.stateName(s.state), v: NS.money(lim, false).replace(/\.00$/, '') }) : t('ev.small'));
         /* since 1 Mar 2024 e-invoice businesses make the e-way bill for a B2B invoice from the IRN */
         if (d.kind === 'tax' && NS.gstinCheck(b.gstin).ok && b.gstin && e.aato !== 'lt5') note.push(t('ev.fromirn'));
@@ -138,6 +140,9 @@
     var items = r2(sum.val), grand = tt.grand;
     out.ValDtls = { AssVal: r2(sum.ass), CgstVal: r2(sum.c), SgstVal: r2(sum.s), IgstVal: r2(sum.i), CesVal: 0, StCesVal: 0, Discount: 0, OthChrg: 0, RndOffAmt: r2(grand - items), TotInvVal: grand };
     if (s.bankAcc) out.PayDtls = put(put({ Nm: clip(s.name, 100), AccDet: clip(s.bankAcc, 18) }, 'FinInsBr', clip(s.bankIfsc, 11)), 'Mode', '');
+    /* export details (export-invoice site, d.exp from export.js): shipping bill, port, currency, country */
+    var x = d.exp;
+    if (exp && x) out.ExpDtls = put(put(put(put(put({ RefClm: x.refund === 'Y' ? 'Y' : 'N' }, 'ShipBNo', clip(x.sbNo, 20)), 'ShipBDt', dmy(x.sbDate)), 'Port', clip(x.port, 10).toUpperCase()), 'ForCur', clip(x.cur, 3).toUpperCase()), 'CntCode', clip(x.country, 2).toUpperCase());
     if (e.withEwb) out.EwbDtls = ewbPart(e, true);
     return [out];
   }
@@ -149,8 +154,10 @@
       if (v || e.tdoc) { o.TransMode = String(e.mode || '1'); put(o, 'TransDocNo', clip(e.tdoc, 15)); put(o, 'TransDocDt', dmy(e.tdate)); put(o, 'VehNo', v); if (v) o.VehType = e.vtype || 'R'; }
       return o;
     }
-    return { transporterId: clip(e.tid, 15).toUpperCase(), transporterName: clip(e.tname, 100), transDocNo: clip(e.tdoc, 15), transMode: v || e.tdoc ? String(e.mode || '1') : '',
-      transDistance: String(+e.dist || 0), transDocDate: dmy(e.tdate), vehicleNo: v, vehicleType: v ? (e.vtype || 'R') : '' };
+    /* official bulk schema (NIC, Version 1.0.0621): transMode and transDistance are numbers; no Part B (vehicle or transport doc) = Part A only, no validity yet */
+    var o2 = { transporterId: clip(e.tid, 15).toUpperCase(), transporterName: clip(e.tname, 100), transDocNo: clip(e.tdoc, 15), transDistance: +e.dist || 0, transDocDate: dmy(e.tdate), vehicleNo: v, vehicleType: e.vtype || 'R' };
+    if (v || e.tdoc) o2.transMode = +(e.mode || 1);
+    return o2;
   }
 
   /* ---------- e-way bill JSON (bulk generation) ---------- */
@@ -158,21 +165,21 @@
     var e = ex(d), s = d.seller, b = d.buyer, rows = itemRows(d, tt, false), sa = lines(s.addr), ba = lines(b.addr), to = d.ship && d.ship.addr ? d.ship : null;
     var ta = to ? lines(to.addr) : ba, main = rows.slice().sort(function (x, y) { return y.ass - x.ass; })[0];
     var bill = {
-      userGstin: s.gstin, supplyType: 'O', subSupplyType: 1, subSupplyDesc: '', docType: d.kind === 'tax' ? 'INV' : 'BIL',
+      userGstin: s.gstin, supplyType: 'O', subSupplyType: +e.sub || (/^EXP/.test(e.sup) ? 3 : 1), subSupplyDesc: +e.sub === 8 ? clip(e.subDesc || 'Others', 20) : '', docType: e.dtype || (d.kind === 'tax' || d.type === 'exp' ? 'INV' : 'BIL'),
       docNo: String(d.no).toUpperCase(), docDate: dmy(d.date),
       fromGstin: s.gstin, fromTrdName: clip(s.name, 100), fromAddr1: sa[0], fromAddr2: sa[1], fromPlace: clip(s.city, 50), fromPincode: +digits(s.pin),
       actualFromStateCode: +s.state, fromStateCode: +s.state,
       toGstin: b.gstin && NS.gstinCheck(b.gstin).ok ? b.gstin : 'URP', toTrdName: clip(b.name, 100), toAddr1: ta[0], toAddr2: ta[1],
-      toPlace: clip((to || b).city, 50), toPincode: +digits((to || b).pin), actualToStateCode: +((to && to.state) || b.state), toStateCode: +(d.pos || b.state),
+      toPlace: clip((to || b).city, 50), toPincode: +digits((to || b).pin), actualToStateCode: ewbState((to && to.state) || b.state), toStateCode: ewbState(d.pos || b.state),
       transType: to ? 2 : 1,
       OthValue: tt.roundOff, totalValue: r2(tt.taxable), cgstValue: r2(rows.reduce(function (a, r) { return a + r.cgst; }, 0)), sgstValue: r2(rows.reduce(function (a, r) { return a + r.sgst; }, 0)),
       igstValue: r2(rows.reduce(function (a, r) { return a + r.igst; }, 0)), cessValue: 0, TotNonAdvolVal: 0, totInvValue: tt.grand
     };
     Object.assign(bill, ewbPart(e, false));
-    bill.mainHsnCode = main ? +digits(main.it.hsn) : 0;
+    bill.mainHsnCode = main ? digits(main.it.hsn) : '';
     bill.itemList = rows.map(function (r) {
       var half = tt.intra ? r.g / 2 : 0;
-      return { itemNo: r.i + 1, productName: clip(r.it.desc, 100), productDesc: clip(r.it.desc, 100), hsnCode: +digits(r.it.hsn), quantity: r.qty, qtyUnit: unit(r.it.unit),
+      return { itemNo: r.i + 1, productName: clip(r.it.desc, 100), productDesc: clip(r.it.desc, 100), hsnCode: digits(r.it.hsn), quantity: r.qty, qtyUnit: unit(r.it.unit),
         taxableAmount: r.ass, sgstRate: half, cgstRate: half, igstRate: tt.intra ? 0 : r.g, cessRate: 0, cessNonAdvol: 0 };
     });
     return { version: EWB_VERSION, billLists: [bill] };
@@ -225,12 +232,13 @@
     api = A;
     var F = A.field;
     return '<fieldset class="card ei" id="ei-box"><legend>' + esc(t('lg.einv')) + '</legend>' +
-      '<p class="hint">' + esc(t('ei.intro')) + ' <a href="/e-invoice-e-way-bill/#make-the-file">' + esc(t('ei.guide')) + ' ›</a></p>' +
+      '<p class="hint">' + esc(t('ei.intro')) + ' <a href="' + (NS.einvGuide || '/e-invoice-e-way-bill/#make-the-file') + '">' + esc(t('ei.guide')) + ' ›</a></p>' +
       '<div class="fg">' +
         '<div class="f wide"><label for="ei-sup">' + esc(t('ei.sup')) + '</label><select id="ei-sup">' + SUP.map(function (k) { return opt(k, t('ei.s.' + k)); }).join('') + '</select></div>' +
         '<div class="f wide"><label for="ei-aato">' + esc(t('ei.aato')) + '</label><select id="ei-aato">' + AATO.map(function (k) { return opt(k, t('ei.a.' + (k || 'none'))); }).join('') + '</select><small class="hint">' + esc(t('ei.h.aato')) + '</small></div>' +
       '</div>' +
       '<details class="more" id="ei-trd"><summary>' + esc(t('ei.tr')) + '</summary><div class="fg">' +
+        '<div class="f"><label for="ei-sub">' + esc(t('ei.sub')) + '</label><select id="ei-sub">' + [1, 3, 9].map(function (k) { return opt(k, t('ei.sb.' + k)); }).join('') + '</select></div>' +
         F('ei-dist', t('ei.dist'), { mode: 'numeric', max: 4, ltr: 1, hint: t('ei.h.dist') }) +
         '<div class="f"><label for="ei-mode">' + esc(t('ei.mode')) + '</label><select id="ei-mode">' + [1, 2, 3, 4].map(function (k) { return opt(k, t('ei.m.' + k)); }).join('') + '</select></div>' +
         F('ei-veh', t('ei.veh'), { max: 15, ltr: 1, hint: t('ei.h.veh') }) +
@@ -251,7 +259,7 @@
       '</div></details>' +
     '</fieldset>';
   }
-  var MAP = { 'ei-aato': 'aato', 'ei-sup': 'sup', 'ei-dist': 'dist', 'ei-mode': 'mode', 'ei-veh': 'veh', 'ei-vtype': 'vtype', 'ei-tid': 'tid', 'ei-tname': 'tname', 'ei-tdoc': 'tdoc', 'ei-tdate': 'tdate' };
+  var MAP = { 'ei-aato': 'aato', 'ei-sup': 'sup', 'ei-sub': 'sub', 'ei-dist': 'dist', 'ei-mode': 'mode', 'ei-veh': 'veh', 'ei-vtype': 'vtype', 'ei-tid': 'tid', 'ei-tname': 'tname', 'ei-tdoc': 'tdoc', 'ei-tdate': 'tdate' };
   var MAN = { 'ei-irn': 'irn', 'ei-ack': 'ack', 'ei-ackdt': 'ackDt', 'ei-qr': 'qr', 'ei-ewbno': 'ewb', 'ei-ewbdt': 'ewbDt', 'ei-ewbtill': 'ewbTill' };
   function wire(ed) {
     box = $('#ei-box', ed);
@@ -307,7 +315,7 @@
   function fill() {
     if (!box) return;
     var d = api.doc(), x = ex(d), irn = d.irn || {};
-    Object.keys(MAP).forEach(function (id) { var el = $('#' + id, box); if (el) el.value = x[MAP[id]] == null ? '' : x[MAP[id]]; });
+    Object.keys(MAP).forEach(function (id) { var el = $('#' + id, box); if (el) { el.value = x[MAP[id]] == null ? '' : x[MAP[id]]; if (el.tagName === 'SELECT' && el.selectedIndex < 0) el.selectedIndex = 0; } });
     $('#ei-with', box).checked = !!x.withEwb;
     Object.keys(MAN).forEach(function (id) { $('#' + id, box).value = irn[MAN[id]] || ''; });
     status();
