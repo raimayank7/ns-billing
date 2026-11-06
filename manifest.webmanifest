@@ -19,15 +19,7 @@
  "shortcuts": [
   {
    "name": "New invoice",
-   "url": "https://billing.niveshsahayak.in/"
-  },
-  {
-   "name": "Nivesh Sahayak App",
-   "url": "https://app.niveshsahayak.in/"
-  },
-  {
-   "name": "Settings and saved data",
-   "url": "https://my.niveshsahayak.in/"
+   "url": "/"
   }
  ],
  "icons": [
